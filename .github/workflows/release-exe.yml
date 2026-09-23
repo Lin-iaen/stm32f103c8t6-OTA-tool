@@ -1,0 +1,40 @@
+name: Build fwb.exe
+
+# Runs on every tag like v0.1.0, and can be triggered manually.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest fwb_tool/tests/ -q
+      - name: Build exe
+        run: python tools/build_exe.py
+      - name: Smoke test exe
+        run: dist\fwb.exe --help
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fwb-windows-exe
+          path: dist/fwb.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/fwb.exe
+            release/*.bin
+            release/*.hex

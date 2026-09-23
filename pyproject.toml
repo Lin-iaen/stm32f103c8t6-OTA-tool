@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwb-tool"
+version = "0.1.0"
+description = "Wireless (BLE / serial) OTA flashing tool for STM32F103C8T6 boards running the f103-workbench bootloader"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Lin-iaen" }]
+keywords = ["stm32", "stm32f103", "ota", "bootloader", "ble", "firmware", "embedded"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Embedded Systems",
+]
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+ble = ["bleak>=0.21"]
+dev = ["pytest>=7", "bleak>=0.21", "pyinstaller>=6"]
+
+[project.scripts]
+fwb = "fwb_tool.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Lin-iaen/stm32f103c8t6-OTA-tool"
+Source = "https://github.com/Lin-iaen/stm32f103c8t6-OTA-tool"
+
+[tool.setuptools.packages.find]
+include = ["fwb_tool*"]
+
+[tool.setuptools.package-data]
+fwb_tool = ["py.typed"]

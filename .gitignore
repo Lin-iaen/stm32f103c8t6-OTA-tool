@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# pyinstaller
+*.spec
+
+# release archives (keep the raw binaries, ignore packed zips)
+*.zip
+!release/*.bin
+!release/*.hex
