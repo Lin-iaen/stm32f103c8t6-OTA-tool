@@ -20,9 +20,14 @@ ENTRY(Reset_Handler)
 _estack = 0x20000000 + 20K;
 _Min_Stack_Size = 0x400;
 
+/* App region length: 115 KB for the 128KB layout. Forced-64KB test builds
+ * pass -Wl,--defsym=APP_FLASH_LEN=0xCC00 (51 KB) so the linker enforces the
+ * same limit the bootloader will use at runtime from F_SIZE. */
+APP_FLASH_LEN = DEFINED(APP_FLASH_LEN) ? APP_FLASH_LEN : 0x1CC00;
+
 MEMORY
 {
-  FLASH (rx)      : ORIGIN = 0x08003000, LENGTH = 0x1CC00
+  FLASH (rx)      : ORIGIN = 0x08003000, LENGTH = APP_FLASH_LEN
   RAM   (xrw)     : ORIGIN = 0x20000000, LENGTH = 20K
 }
 
@@ -93,3 +98,10 @@ SECTIONS
 
   /DISCARD/ : { *(.note .note.*) }
 }
+
+/* Fail the link instead of silently producing an image the bootloader will
+ * refuse (or that would overlap the config page). */
+ASSERT(_sidata + SIZEOF(.data) <= ORIGIN(FLASH) + LENGTH(FLASH),
+       "app image does not fit the app region")
+ASSERT(ORIGIN(FLASH) + LENGTH(FLASH) <= 0x0801FC00,
+       "app region overlaps the 128KB config page")

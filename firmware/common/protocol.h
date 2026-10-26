@@ -22,7 +22,7 @@
 #define PROTO_SOF0       0xAA
 #define PROTO_SOF1       0x55
 #define PROTO_MAX_PAYLOAD 1024
-#define PROTO_OVERHEAD   6   /* SOF0 SOF1 CMD LEN_H LEN_L CRC_H CRC_L minus payload */
+#define PROTO_OVERHEAD   7   /* SOF0 SOF1 CMD LEN_H LEN_L CRC_H CRC_L, payload excluded */
 
 /* ---------------- Bootloader commands (0x01..0x0F) ---------------- */
 #define BL_QUERY    0x01  /* resp: bl_ver(3) + app_base(4 BE) + max_size(4 BE) + page(4 BE) */
@@ -83,9 +83,9 @@
  * 0.1.0 (UART moved to USART1, generic console app). Bump patch per change. */
 #define BL_VERSION_MAJOR  0
 #define BL_VERSION_MINOR  1
-#define BL_VERSION_PATCH  1
+#define BL_VERSION_PATCH  2
 #define APP_VERSION_MAJOR 0
 #define APP_VERSION_MINOR  1
-#define APP_VERSION_PATCH  38
+#define APP_VERSION_PATCH  39
 
 #endif /* PROTOCOL_H */

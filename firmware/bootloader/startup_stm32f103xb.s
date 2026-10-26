@@ -13,7 +13,6 @@
 
   .section .isr_vector, "a"
   .type g_pfnVectors, %object
-  .size g_pfnVectors, . - g_pfnVectors
 
 g_pfnVectors:
   .word _estack
@@ -94,6 +93,7 @@ g_pfnVectors:
   .word DMA2_Channel2_IRQHandler
   .word DMA2_Channel3_IRQHandler
   .word DMA2_Channel4_5_IRQHandler
+  .size g_pfnVectors, . - g_pfnVectors
 
   .section .text.Reset_Handler, "ax"
   .global Reset_Handler

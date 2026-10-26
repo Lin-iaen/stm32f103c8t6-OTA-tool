@@ -14,6 +14,10 @@ CFLAGS  = $(CPU) -O2 -Wall -Wextra -fno-common \
 # writes its config page at 0x0800FC00. Example: make FLASH_SIZE_FORCE_KB=64
 ifdef FLASH_SIZE_FORCE_KB
 CFLAGS += -DFLASH_SIZE_FORCE_KB=$(FLASH_SIZE_FORCE_KB)
+ifeq ($(FLASH_SIZE_FORCE_KB),64)
+# Same 51 KB ceiling the bootloader applies at runtime for a 64KB part.
+LDFLAGS += -Wl,--defsym=APP_FLASH_LEN=0xCC00
+endif
 endif
 LDFLAGS = $(CPU) -TSTM32F103C8Tx_FLASH.ld -Wl,-Map=app.map -Wl,--gc-sections
 STARTUP = startup_stm32f103xb_app.s

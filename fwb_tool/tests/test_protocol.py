@@ -162,6 +162,15 @@ def test_telemetry_parse():
     assert t.uptime_ms == 123456
     assert t.vbat_mv == 3300
     assert t.pwm_active
+    assert t.vbat_valid
+
+
+def test_telemetry_marks_failed_adc_read():
+    """flags bit1 = "vbat invalid"; 0 mV must not look like a measurement."""
+    t = parse_telemetry(struct.pack(">IHB", 1000, 0, 0x02))
+    assert t.vbat_mv == 0
+    assert not t.vbat_valid
+    assert not t.pwm_active
 
 
 # ---------------- image loading ----------------

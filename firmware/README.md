@@ -1,6 +1,6 @@
 # 固件源码（自动识别 64/128 KB Flash）
 
-本目录是 `release/bootloader-v0.1.1.bin` 与 `release/app-v0.1.38.bin`
+本目录是 `release/bootloader-v0.1.2.bin` 与 `release/app-v0.1.39.bin`
 的源码。**Bootloader 和 App 各只有一份**：启动时读取芯片的 `F_SIZE`
 寄存器（`0x1FFFF7E0`），在运行时选择 64 KB 或 128 KB 布局，不需要为
 两种芯片分别编译。
@@ -30,7 +30,7 @@ make -C firmware/app
 # 产物：firmware/app/app.bin / app.hex（约 4.6 KB）
 
 make -C firmware/app release
-# 产物：release/app-v0.1.38.bin / .hex（版本取自 protocol.h）
+# 产物：release/app-v0.1.39.bin / .hex（版本取自 protocol.h）
 ```
 
 把 Bootloader 烧录到 `0x08000000`。例如 ST-Link：
@@ -58,7 +58,9 @@ make -C firmware/app FLASH_SIZE_FORCE_KB=64
 
 此时 `BL_QUERY` 返回 `max_size=52224`，60 KB 镜像会在主机侧被拒绝，
 直接发 `BL_START` 也会返回 `PARAM`；App 则把配置页写到 `0x0800FC00`，
-不会碰 128 KB 的配置页。
+不会碰 128 KB 的配置页。强制 64 KB 构建还会给链接器传
+`--defsym=APP_FLASH_LEN=0xCC00`，**镜像超过 51 KB 会直接链接失败**，
+不会再出现"链接器按 115 KB 放行、运行期却按 51 KB 擦写"的两套上限。
 
 > 这个强制版本只用于验证，**不要**作为正式发布固件；`make release`
 > 会拒绝这种构建。验证完成后记得重新编译并烧回默认的自动识别版。
@@ -87,3 +89,17 @@ firmware/
 ```
 
 协议细节见 [../docs/04-protocol.md](../docs/04-protocol.md)。
+
+## 版本变更
+
+### Bootloader v0.1.2
+
+- **`BL_ABORT` 现在真的能中止升级**：原来只清 `OTA_MAGIC`（App 请求 DFU 时写的值），
+  而 `BL_START` 写的是 `OTA_UPDATE_MAGIC`，所以"升级到一半取消"永远清不掉标志，
+  复位后又进 DFU。现在无条件清标志再复位；App 无效时 `main()` 仍停在 DFU，
+  不会误启动半截镜像。
+
+### App v0.1.39
+
+见 [app/README.md](app/README.md#本版修复v0139)：栈峰值、帧重同步、遥测电压、
+ADC 启动时序、参数保存错误上报、uint16 参数、config 页 CRC 与版本。

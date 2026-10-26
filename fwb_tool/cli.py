@@ -99,7 +99,7 @@ def _monitor_ticks(n: int):
     """Yield once per 1 s telemetry interval. n == 0 means "forever".
 
     Kept as a generator so `--n 3` cannot fall back into the endless branch
-    when the counter reaches 0 (the bug in the pre-0.1.1 loop).
+    when the counter reaches 0 (the bug in the old loop).
     """
     count = 0
     while n == 0 or count < n:
@@ -110,7 +110,8 @@ def _monitor_ticks(n: int):
 def cmd_monitor(args):
     def show(t: Telemetry):
         up = t.uptime_ms / 1000
-        print(f"uptime={up:8.1f}s  vbat={t.vbat_mv:5d}mV  pwm={'ON' if t.pwm_active else 'off'}")
+        vbat = f"{t.vbat_mv:5d}mV" if t.vbat_valid else "  ----mV (ADC invalid)"
+        print(f"uptime={up:8.1f}s  vbat={vbat}  pwm={'ON' if t.pwm_active else 'off'}")
 
     with _open_device(args, on_telemetry=show) as dev:
         # force one report immediately

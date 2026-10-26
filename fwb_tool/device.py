@@ -36,6 +36,15 @@ class Telemetry:
     def pwm_active(self) -> bool:
         return bool(self.flags & 0x01)
 
+    @property
+    def vbat_valid(self) -> bool:
+        """False when the app flagged the ADC read as failed (bit1).
+
+        The app used to send 0 mV for a failed conversion, which is
+        indistinguishable from a real 0 V rail.
+        """
+        return not (self.flags & 0x02)
+
 
 class Device:
     """One connected workbench device (either transport)."""

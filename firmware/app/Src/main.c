@@ -249,23 +249,31 @@ static uint16_t g_vref_mv = 3300;
 
 /* ================= Config page (flash persistence) =================
  * 1KB at config_page_addr() (0x0800FC00 on 64KB, 0x0801FC00 on 128KB),
- * selected at runtime from F_SIZE. Managed by the App. Layout:
+ * selected at runtime from F_SIZE. Managed by the App. Layout v2:
  *   [0..3]   magic (0x4B574348 = "WORK")
- *   [4..5]   version (uint16, for future migrations)
- *   [6..7]   CRC16-MODBUS of bytes 8..end
- *   [8..11]  heartbeat_ms (uint32)
- *   [12..15] vref_mv (uint32)
- * The rest of the page is reserved for future params. */
+ *   [4..5]   version (uint16, = 2)
+ *   [6..7]   CRC16-MODBUS of bytes 8..11 (exactly the fields below)
+ *   [8..9]   heartbeat_ms (uint16, 0 = telemetry off)
+ *   [10..11] vref_mv (uint16)
+ * Bytes 12..1023 are reserved. They are NOT covered by the CRC and
+ * config_save() erases the whole page, so a second writer on this page would
+ * be wiped by any param save: keep exactly one save path per page.
+ *
+ * v1 stored both fields as uint32 but read them back as uint16, so a value
+ * above 65535 was silently truncated on the next boot. v2 stores uint16 and
+ * rejects a v1 page (magic/version mismatch -> defaults), which resets the
+ * params once after this update. */
 
 #define CONFIG_MAGIC    0x4B574348U
-#define CONFIG_VERSION  1
+#define CONFIG_VERSION  2
+#define CONFIG_CRC_LEN  4u          /* bytes 8..11 */
 
 typedef struct {
     uint32_t magic;
     uint16_t version;
     uint16_t crc16;
-    uint32_t heartbeat_ms;
-    uint32_t vref_mv;
+    uint16_t heartbeat_ms;
+    uint16_t vref_mv;
 } config_page_t;
 
 static int flash_unlock(void) {
@@ -327,56 +335,47 @@ static void config_load(void) {
     if (cp->magic != CONFIG_MAGIC) return;
     if (cp->version != CONFIG_VERSION) return;
 
-    uint8_t crcbuf[8];
-    crcbuf[0] = (uint8_t)(cp->heartbeat_ms >> 24);
-    crcbuf[1] = (uint8_t)(cp->heartbeat_ms >> 16);
-    crcbuf[2] = (uint8_t)(cp->heartbeat_ms >> 8);
-    crcbuf[3] = (uint8_t)(cp->heartbeat_ms);
-    crcbuf[4] = (uint8_t)(cp->vref_mv >> 24);
-    crcbuf[5] = (uint8_t)(cp->vref_mv >> 16);
-    crcbuf[6] = (uint8_t)(cp->vref_mv >> 8);
-    crcbuf[7] = (uint8_t)(cp->vref_mv);
-    if (crc16_modbus(crcbuf, 8) != cp->crc16) return;
+    uint8_t crcbuf[CONFIG_CRC_LEN];
+    crcbuf[0] = (uint8_t)(cp->heartbeat_ms >> 8);
+    crcbuf[1] = (uint8_t)(cp->heartbeat_ms);
+    crcbuf[2] = (uint8_t)(cp->vref_mv >> 8);
+    crcbuf[3] = (uint8_t)(cp->vref_mv);
+    if (crc16_modbus(crcbuf, CONFIG_CRC_LEN) != cp->crc16) return;
 
-    g_heartbeat_ms = (uint16_t)cp->heartbeat_ms;
-    g_vref_mv       = (uint16_t)cp->vref_mv;
+    g_heartbeat_ms = cp->heartbeat_ms;
+    g_vref_mv      = cp->vref_mv;
 }
 
-static void config_save(void) {
+/* Returns 0 on success, negative on erase/write failure. Callers must report
+ * the failure: a silent miss means the UI says "saved" while the next boot
+ * comes up with defaults. */
+static int config_save(void) {
+    int rc = -1;
     /* Disable UART1 RXNE interrupt during flash ops so we don't lose bytes
      * while the flash bus is stalled. */
     USART1->CR1 &= ~USART_CR1_RXNEIE;
 
     if (flash_erase_config_page() != 0) goto done;
 
-    uint8_t crcbuf[8];
-    crcbuf[0] = (uint8_t)(g_heartbeat_ms >> 24);
-    crcbuf[1] = (uint8_t)(g_heartbeat_ms >> 16);
-    crcbuf[2] = (uint8_t)(g_heartbeat_ms >> 8);
-    crcbuf[3] = (uint8_t)(g_heartbeat_ms);
-    crcbuf[4] = (uint8_t)(g_vref_mv >> 24);
-    crcbuf[5] = (uint8_t)(g_vref_mv >> 16);
-    crcbuf[6] = (uint8_t)(g_vref_mv >> 8);
-    crcbuf[7] = (uint8_t)(g_vref_mv);
+    uint8_t crcbuf[CONFIG_CRC_LEN];
+    crcbuf[0] = (uint8_t)(g_heartbeat_ms >> 8);
+    crcbuf[1] = (uint8_t)(g_heartbeat_ms);
+    crcbuf[2] = (uint8_t)(g_vref_mv >> 8);
+    crcbuf[3] = (uint8_t)(g_vref_mv);
 
-    uint16_t hw[8];
+    uint16_t hw[6];
     hw[0] = (uint16_t)(CONFIG_MAGIC & 0xFFFF);
     hw[1] = (uint16_t)(CONFIG_MAGIC >> 16);
     hw[2] = CONFIG_VERSION;
-    hw[3] = crc16_modbus(crcbuf, 8);
-    /* heartbeat_ms as two halfwords */
-    uint32_t hm = (uint32_t)g_heartbeat_ms;
-    hw[4] = (uint16_t)(hm & 0xFFFF);
-    hw[5] = (uint16_t)(hm >> 16);
-    /* vref_mv as two halfwords */
-    uint32_t vm = (uint32_t)g_vref_mv;
-    hw[6] = (uint16_t)(vm & 0xFFFF);
-    hw[7] = (uint16_t)(vm >> 16);
+    hw[3] = crc16_modbus(crcbuf, CONFIG_CRC_LEN);
+    hw[4] = g_heartbeat_ms;
+    hw[5] = g_vref_mv;
 
-    flash_write_halfwords(config_page_addr(), hw, 8);
+    rc = flash_write_halfwords(config_page_addr(), hw, 6);
 
 done:
     USART1->CR1 |= USART_CR1_RXNEIE;
+    return rc;
 }
 
 /* ================= ADC (on-demand single-shot) ================= */
@@ -402,6 +401,12 @@ static int adc_read_mv(uint8_t channel, uint16_t *mv) {
     if (channel >= 16) ADC1->CR2 |= ADC_CR2_TSVREFE;
     delay_ms(2);                         /* tSTAB */
 
+    /* SWSTART only starts a conversion when it is selected as the trigger
+     * source (EXTSEL=SWSTART) and the trigger is enabled (EXTTRIG). Relying on
+     * the ADON write alone made every second read time out, which is what the
+     * alternating "vbat = 0" telemetry frames were. */
+    ADC1->CR2 |= ADC_CR2_EXTTRIG | ADC_CR2_EXTSEL_SWSTART;
+    (void)ADC1->DR;                      /* drop a stale EOC/result */
     ADC1->CR2 |= ADC_CR2_SWSTART;
     { volatile uint32_t to = 400000u;
       while (!(ADC1->SR & ADC_SR_EOC) && --to) { } }
@@ -531,9 +536,13 @@ static void send_telemetry(void) {
     buf[0] = (uint8_t)(up >> 24); buf[1] = (uint8_t)(up >> 16);
     buf[2] = (uint8_t)(up >> 8);  buf[3] = (uint8_t)(up);
     uint16_t mv = 0;
-    (void)adc_read_mv(0, &mv);         /* PA0 by default; see docs if PA0 is PWM */
+    int adc_ok = (adc_read_mv(0, &mv) == 0);   /* PA0 unless PA0 is used as PWM */
     buf[4] = (uint8_t)(mv >> 8); buf[5] = (uint8_t)(mv);
-    buf[6] = pwm_any_active() ? 0x01 : 0x00;
+    /* flags bit0 = PWM active, bit1 = vbat invalid (ADC timeout). A failed
+     * read must never look like a real 0 mV measurement. */
+    uint8_t flags = pwm_any_active() ? 0x01u : 0x00u;
+    if (!adc_ok) flags |= 0x02u;
+    buf[6] = flags;
     send_frame(APP_TELEMETRY_REPORT, buf, 7);
 }
 
@@ -590,7 +599,7 @@ static void comm_feed(void) {
         case ST_SOF0: if (b == PROTO_SOF0) f_state = ST_SOF1; break;
         case ST_SOF1:
             if (b == PROTO_SOF1) f_state = ST_CMD;
-            else f_state = (b == PROTO_SOF0) ? ST_SOF0 : ST_SOF0;
+            else f_state = (b == PROTO_SOF0) ? ST_SOF1 : ST_SOF0;
             break;
         case ST_CMD:     f_cmd = b; f_state = ST_LEN_H; break;
         case ST_LEN_H:   f_len = (uint16_t)b << 8; f_state = ST_LEN_L; break;
@@ -607,7 +616,11 @@ static void comm_feed(void) {
         case ST_CRC_H:   f_crc_h = b; f_state = ST_CRC_L; break;
         case ST_CRC_L: {
             f_crc_l = b;
-            uint8_t crcbuf[3 + PROTO_MAX_PAYLOAD];
+            /* static: this is a 1 KB-class buffer; keeping it off the stack
+             * makes the worst-case stack use a constant (comm_feed() is only
+             * called from the main loop, dispatch() runs after the CRC check,
+             * so there is no re-entrancy). */
+            static uint8_t crcbuf[3 + PROTO_MAX_PAYLOAD];
             crcbuf[0] = f_cmd;
             crcbuf[1] = (uint8_t)(f_len >> 8);
             crcbuf[2] = (uint8_t)(f_len & 0xFF);
@@ -740,7 +753,10 @@ static void dispatch(uint8_t cmd, const uint8_t *p, uint16_t len) {
             respond(cmd, PROTO_ERR_PARAM, NULL, 0);
             return;
         }
-        config_save();   /* persist to flash */
+        if (config_save() != 0) {   /* persist to flash */
+            respond(cmd, PROTO_ERR_FLASH, NULL, 0);
+            return;
+        }
         respond(cmd, PROTO_OK, NULL, 0);
         return;
     }

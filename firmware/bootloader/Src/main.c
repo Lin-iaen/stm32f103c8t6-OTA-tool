@@ -353,9 +353,13 @@ void bl_process_frame(const uint8_t *p, uint16_t len, uint8_t cmd) {
     }
     case BL_ABORT: {
         if (len != 0u) { err = PROTO_ERR_PARAM; break; }
-        if (bl_get_ota_flag() == OTA_MAGIC && bl_app_valid()) {
-            if (bl_set_ota_flag(0) != 0) { err = PROTO_ERR_FLASH; break; }
-        }
+        /* Clear unconditionally: an app-requested DFU left OTA_MAGIC (0x4F54)
+         * here, an update in progress left OTA_UPDATE_MAGIC (0x5550). Testing
+         * only for OTA_MAGIC made "abort a running update" a no-op, so the
+         * device re-entered DFU on every reset with no software way out.
+         * main() still refuses to boot an invalid app, so clearing the flag
+         * cannot start a half-written image. */
+        if (bl_set_ota_flag(0) != 0) { err = PROTO_ERR_FLASH; break; }
         NVIC_SystemReset();
         break;
     }
