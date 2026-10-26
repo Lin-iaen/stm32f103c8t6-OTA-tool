@@ -188,7 +188,7 @@ Bootloader 启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），自�
 >
 > 主机工具先按 115 KB 的上限接收镜像，真正的上限由 Bootloader 的
 > `BL_QUERY` 在擦除前强制检查；把 100 KB 镜像发到 64 KB 板会被拒绝，
-> 不会擦除现有 App。
+> 不会擦除现有 App，主机随后发 `BL_ABORT` 让设备自动复位回原 App。
 >
 > **从旧版升级**：只 OTA `app-v0.1.38.bin` 仍可运行，但旧 Bootloader
 > 仍按 51 KB 上限；要用满 128 KB，需用 ST-Link/DAPLink 再烧一次

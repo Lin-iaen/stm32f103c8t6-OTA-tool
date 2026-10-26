@@ -21,11 +21,12 @@ from __future__ import annotations
 import time
 
 from .protocol import (
-    BL_QUERY, BL_START, BL_DATA, BL_VERIFY, BL_JUMP,
+    BL_QUERY, BL_START, BL_DATA, BL_VERIFY, BL_JUMP, BL_ABORT,
     APP_OTA_START, APP_PING, APP_GET_VERSION,
     PROTO_OK, crc32_ieee, pack_u32,
 )
 from .device import Device, DeviceError
+from .transport import TransportError
 
 CHUNK = 512                 # even, <=1024; matches BL_DATA constraints
 BL_QUERY_TIMEOUT = 3.0      # bootloader needs a beat to come up after reset
@@ -90,6 +91,14 @@ def ota_update(dev: Device, image: bytes, progress=None, verify_retries: int = 2
     app_base = int.from_bytes(q[4:8], "big")
     max_size = int.from_bytes(q[8:12], "big")
     if total > max_size:
+        # BL_START has not run, so the current app is still intact. Clear the
+        # OTA flag and reset back into it instead of leaving the board in DFU.
+        # BL_ABORT resets without sending a response, so a timeout is expected.
+        try:
+            dev.request(BL_ABORT, timeout=0.5, retries=0)
+        except (DeviceError, TransportError):
+            pass
+        time.sleep(1.0)
         raise DeviceError(f"image {total}B > partition {max_size}B (base 0x{app_base:08X})")
 
     # ---------- 3) BL_START: flag + erase ----------
