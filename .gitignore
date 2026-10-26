@@ -17,3 +17,10 @@ venv/
 *.zip
 !release/*.bin
 !release/*.hex
+
+# firmware build artifacts
+firmware/**/*.o
+firmware/**/*.d
+firmware/**/*.elf
+firmware/**/*.map
+firmware/**/*.hex

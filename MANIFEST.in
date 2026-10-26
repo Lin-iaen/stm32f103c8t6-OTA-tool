@@ -7,3 +7,4 @@ recursive-include docs *.md
 recursive-include tools *.py *.bat *.sh
 recursive-include fwb_tool py.typed
 recursive-include fwb_tool/tests *.py
+recursive-include firmware *.c *.h *.s *.ld Makefile *.md

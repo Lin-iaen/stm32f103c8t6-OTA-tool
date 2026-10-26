@@ -26,3 +26,19 @@ jobs:
         run: python -m pytest fwb_tool/tests/ -q
       - name: CLI smoke test
         run: python -m fwb_tool scan-serial || true
+
+  firmware:
+    name: Build bootloader
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi make
+      - name: Build auto-detect bootloader
+        run: make -C firmware/bootloader
+      - name: Check bootloader fits its 12 KB slot
+        run: test "$(stat -c%s firmware/bootloader/bl.bin)" -le 12288
+      - name: Build forced-64KB test variant
+        run: make -C firmware/bootloader clean && make -C firmware/bootloader FLASH_SIZE_FORCE_KB=64
+      - name: Check forced-64KB variant fits
+        run: test "$(stat -c%s firmware/bootloader/bl.bin)" -le 12288
