@@ -11,11 +11,11 @@ fwb ota app.bin --ble AA:BB:CC:DD:EE:FF
 ## 输出解读
 
 ```
-image: app.bin (4604 bytes)
+image: app.bin (4724 bytes)
 [probe ]   1%                          ← 探测当前是否在 Bootloader
 [probe ]   3% triggering OTA start ... ← 若在 App，令其置标志并复位
 [erase ]   2% erasing 115 KB app region ← 擦除 App 区（128 KB 板；64 KB 板为 51 KB）
-[write ]  ...  4604/4604 bytes         ← BL_DATA 512B（BLE 层再切 ≤120B）
+[write ]  ...  4724/4724 bytes         ← BL_DATA 512B（BLE 层再切 ≤120B）
 [verify]  92% CRC32 0xXXXXXXXX         ← CRC 校验
 [jump  ]  96%                          ← 跳转新 App
 [done  ] 100% App now (0, 1, 38)       ← 重新 PING 确认
