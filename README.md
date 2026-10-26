@@ -3,7 +3,7 @@
 > 给 STM32F103C8T6（Blue Pill）做**无线固件升级**的命令行工具。
 > 插一次线烧好 Bootloader，之后用 BLE 或串口反复换 App，不再需要下载器。
 
-[![tests](https://img.shields.io/badge/tests-17%20passed-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-19%20passed-brightgreen)](#测试)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 
@@ -43,7 +43,7 @@ OTA 的核心安全设计：升级中断电不会变砖。Bootloader 常驻，�
   ├─ 否 → 发 APP_OTA_START，App 置标志并复位进入 Bootloader
 查询分区信息 (BL_QUERY)
 擦除 App 区 (BL_START)
-分块写入 512B (BL_DATA × N)
+分块写入 512B (BL_DATA × N；BLE 层再按 ≤120B 切包)
 CRC32 校验：传输流 == Flash 回读 == 主机计算 (BL_VERIFY)
 跳转新 App (BL_JUMP)，重新 PING 确认
 ```
@@ -148,13 +148,14 @@ stm32f103c8t6-OTA-tool/
 │   ├── device.py             #   请求-响应层 + 固件镜像加载
 │   ├── ota.py                #   OTA 流程编排
 │   ├── cli.py                #   fwb 命令
-│   └── tests/                #   17 项协议回归
+│   └── tests/                #   19 项协议/切包回归
 ├── release/                  # 预编译固件（可直接烧录）
 │   ├── bootloader-v0.1.0.bin    # → 0x08000000
 │   ├── app-v0.1.25.bin          # → 0x08003000（IO 控制台固件）
 │   └── app-v0.1.25.hex
 ├── tools/
 │   ├── flash_initial.py/.bat/.sh   # 首次烧录（需要 STM32CubeProgrammer）
+│   ├── ble_probe.py                # BLE 诊断：扫描 / MTU / PING / 包长断崖
 │   └── build_exe.py                # PyInstaller 打包
 ├── docs/
 │   ├── 01-getting-started.md
@@ -180,7 +181,7 @@ stm32f103c8t6-OTA-tool/
 
 ```powershell
 pip install -e ".[dev]"
-python -m pytest fwb_tool/tests/ -q      # 应 17 passed
+python -m pytest fwb_tool/tests/ -q      # 应 19 passed
 ```
 
 测试覆盖 CRC 标准向量、帧收发与解析容错、命令码冻结校验、镜像加载与

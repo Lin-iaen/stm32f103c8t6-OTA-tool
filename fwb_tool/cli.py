@@ -31,7 +31,7 @@ import sys
 import time
 
 from . import protocol as P
-from .device import Device, DeviceError, Telemetry
+from .device import Device, DeviceError, Telemetry, load_image
 from .ota import ota_update
 from .transport import TransportError, scan_serial, scan_ble
 
@@ -75,7 +75,7 @@ def cmd_info(args):
 
 
 def cmd_ota(args):
-    image = __import__("fwb.device", fromlist=["load_image"]).load_image(args.image)
+    image = load_image(args.image)
     print(f"image: {args.image} ({len(image)} bytes)")
 
     last = {"phase": None, "pct": -1}

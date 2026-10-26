@@ -15,6 +15,12 @@ from pathlib import Path
 
 from fwb_tool import protocol as P
 from fwb_tool.device import load_image, parse_telemetry, DeviceError
+from fwb_tool.transport import (
+    ATT_MIN_PAYLOAD,
+    BRIDGE_MAX_PACKET,
+    _is_length_error,
+    plan_chunk_size,
+)
 
 
 # ---------------- CRC reference vectors ----------------
@@ -124,6 +130,29 @@ def test_ota_magic_fits_backup_register():
     # Firmware stores OTA_MAGIC in a 16-bit STM32F1 BKP_DRx.
     assert P.OTA_MAGIC == 0x4F54
     assert P.OTA_MAGIC <= 0xFFFF
+
+
+# ---------------- BLE chunk planning ----------------
+
+def test_plan_chunk_size():
+    # WinRT: MTU 136 -> 133; BlueZ 5.62+: MTU 517 -> 514. Both cap at 120.
+    assert plan_chunk_size(133) == BRIDGE_MAX_PACKET
+    assert plan_chunk_size(514) == BRIDGE_MAX_PACKET
+    # A genuinely small MTU is respected.
+    assert plan_chunk_size(64) == 64
+    # 20/23 are bleak's "unknown MTU" markers, not a real 23-byte MTU.
+    assert plan_chunk_size(23) == BRIDGE_MAX_PACKET
+    assert plan_chunk_size(20) == BRIDGE_MAX_PACKET
+    assert plan_chunk_size(None) == BRIDGE_MAX_PACKET
+    assert BRIDGE_MAX_PACKET % 2 == 0          # BL_DATA wants even chunks
+    assert ATT_MIN_PAYLOAD == 20
+
+
+def test_is_length_error():
+    assert _is_length_error(Exception("WinError -2147024809"))
+    assert _is_length_error(Exception("[org.bluez.Error.Failed] Failed to initiate write"))
+    assert _is_length_error(Exception("InvalidValueLength"))
+    assert not _is_length_error(Exception("Not connected"))
 
 
 # ---------------- telemetry ----------------

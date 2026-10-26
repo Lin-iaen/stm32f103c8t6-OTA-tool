@@ -31,6 +31,59 @@
 - 首次连接 JDY 系模块可能瞬间断连，工具会自动重连一次；若仍失败，
   重跑命令。
 
+## BLE 诊断：先量 MTU 和模块的单包上限
+
+OTA 写失败时，先用 `tools/ble_probe.py` 把「OS 限制」和「模块限制」分开。
+它只依赖 `bleak`，不需要安装 `fwb`：
+
+```bash
+# 1. 找模块（不广播名字也能按服务过滤）
+python tools/ble_probe.py --scan --service 0000ffe0-0000-1000-8000-00805f9b34fb
+
+# 2. 看 MTU、特征属性和原始 PING 延迟
+python tools/ble_probe.py --address <MAC> --mtu --ping
+
+# 3. 扫包长，找模块的断崖（32..200，每档 2 次）
+python tools/ble_probe.py --address <MAC> --sweep 32 200 4 --reps 2
+```
+
+### 实测数字（STM32F103C8T6 + FFE0/FFE1 透传模块）
+
+| 项目 | Linux（BlueZ 5.72 + bleak 3.0.2） | Windows（WinRT） |
+|---|---|---|
+| 协商 MTU | **136** | 以系统协商为准（常见 136 / 247） |
+| `client.mtu_size` | 连接后先返回 23，`_acquire_mtu()` 后 136 | 直接返回真实值 |
+| `char.max_write_without_response_size` | **133**（= MTU-3） | **133**（= MTU-3） |
+| 模块实际可转发 | **128 B** | 128 B（同一模块） |
+
+包长扫描结果：
+
+```
+  124 | ok
+  128 | ok
+  132 | no-reply              ← 写进去了，模块丢掉尾部
+  136 | write-blocked         ← 超过 MTU-3，OS 直接拒绝
+```
+
+**怎么读这张表：**
+
+- `write-blocked`（WinRT `E_INVALIDARG` / BlueZ `Failed to initiate write`）
+  是**本机 MTU 太小**，与模块无关。换适配器或让系统协商更大 MTU 才有用。
+- `no-reply` 但写入没报错，是**模块的单包缓冲**丢数据。这个 128 B 断崖
+  在 Windows 和 Linux 上完全一致，换 OS 不会好。
+- 固件侧已排除：App 接收环形缓冲 2048 B，Bootloader 帧缓冲 1040 B，
+  都不是 128 B。
+
+工具本身按 `min(max_write_without_response_size, 120)` 切包，遇到长度错误
+自动降到 20 B 重试，所以正常情况下不需要手动改参数。若换了模块仍然
+`no-reply`，用上面的 `--sweep` 重新量它的断崖，再调
+`fwb_tool/transport.py` 里的 `BRIDGE_MAX_PACKET`。
+
+> Linux 上 `client.mtu_size` 在 BlueZ 后端不会自动获取，直接读会得到 23。
+> 不要用 `client._acquire_mtu()`（`BleakClient` 没有这个方法）；要么读
+> 公共属性 `max_write_without_response_size`，要么用
+> `client._backend._acquire_mtu()`。
+
 ## OTA 卡在 `probe`
 
 - 设备可能已经停在 Bootloader：`fwb info --ble ...` 应能应答。

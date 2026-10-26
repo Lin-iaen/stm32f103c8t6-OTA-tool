@@ -10,6 +10,50 @@ from __future__ import annotations
 import threading
 from typing import Callable
 
+# A transparent BLE bridge is not a plain byte pipe: it forwards at most one
+# GATT write's worth of bytes per UART burst. Many JDY-family modules have a
+# 128-byte internal buffer and silently drop the tail of anything larger, so
+# stay below that. 120 is even (BL_DATA wants even chunks) and leaves headroom.
+BRIDGE_MAX_PACKET = 120
+# Smallest ATT payload every BLE 4.0 stack must accept (MTU 23 - 3).
+ATT_MIN_PAYLOAD = 20
+# bleak returns 23 for `mtu_size` when BlueZ has not acquired the real value.
+# A real max_write of 23 bytes is possible but rare; treating it as "unknown"
+# and falling back on the first length error is cheaper than being stuck at
+# 20 B/packet for the whole OTA.
+BLEAK_MTU_UNKNOWN = 23
+
+
+def plan_chunk_size(max_write: int | None) -> int:
+    """Pick a GATT payload size safe for both the OS and the bridge.
+
+    `max_write` is the characteristic's `max_write_without_response_size`:
+      - WinRT: negotiated MTU - 3
+      - BlueZ >= 5.62: characteristic MTU - 3
+      - BlueZ < 5.62: 20 (means "unknown", not a real 23-byte MTU)
+
+    Values <= BLEAK_MTU_UNKNOWN are treated as unknown: try the bridge limit
+    and let the length-error fallback in _write_chunks() drop to 20 if the real
+    MTU turns out to be minimal.
+    """
+    if max_write is None or max_write <= BLEAK_MTU_UNKNOWN:
+        return BRIDGE_MAX_PACKET
+    return max(ATT_MIN_PAYLOAD, min(max_write, BRIDGE_MAX_PACKET))
+
+
+def _is_length_error(exc: BaseException) -> bool:
+    """True when a write failed because the payload exceeded the MTU/bridge."""
+    text = str(exc).lower()
+    return any(marker in text for marker in (
+        "-2147024809",          # WinRT E_INVALIDARG
+        "invalidargs",          # BlueZ D-Bus InvalidArgs
+        "invalid value",
+        "invalidvaluelength",
+        "failed to initiate write",  # BlueZ when len(data) > MTU-3
+        "mtu",
+        "length",
+    ))
+
 
 class TransportError(RuntimeError):
     pass
@@ -73,7 +117,10 @@ class BleTransport:
     Connects via BlueZ (Linux) or WinRT (Windows) using bleak. Discovers the
     write and notify characteristics automatically, preferring the common
     transparent-bridge UUIDs (FFE0/FFE1, FFF0/FFF1, FFB0/FFB1) and falling
-    back to any write/notify pair. MTU-safe writes (chunk to 182 bytes).
+    back to any write/notify pair. Writes are chunked adaptively: the
+    characteristic's max_write_without_response_size, capped at 120 bytes
+    (transparent bridges often drop anything over 128 B), with a 20-byte
+    fallback if the OS still rejects the payload.
     """
 
     # Well-known transparent-BLE services first, then generic discovery.
@@ -91,6 +138,7 @@ class BleTransport:
         self._thread: threading.Thread | None = None
         self._client = None
         self._write_char = None
+        self._chunk_size = BRIDGE_MAX_PACKET
         self._closing = False
 
     # ---- background asyncio loop plumbing ----
@@ -137,18 +185,24 @@ class BleTransport:
             return [p.lower() for p in c.properties]
         write_candidates = [c for c in chars if "write" in props(c) or "write-without-response" in props(c)]
         notify_candidates = [c for c in chars if "notify" in props(c)]
+        if not (write_candidates and notify_candidates):
+            raise TransportError("no write/notify characteristics found")
 
+        w = n = None
         for pref in self.PREFERRED:
             w = next((c for c in write_candidates if c.uuid == pref), None)
             n = next((c for c in notify_candidates if c.uuid == pref), None)
             if w and n:
-                self._write_char = w
-                await self._client.start_notify(n.uuid, self._notify)
-                return
-        if not (write_candidates and notify_candidates):
-            raise TransportError("no write/notify characteristics found")
-        self._write_char = write_candidates[0]
-        await self._client.start_notify(notify_candidates[0].uuid, self._notify)
+                break
+        else:
+            w, n = write_candidates[0], notify_candidates[0]
+        self._write_char = w
+        try:
+            max_write = int(w.max_write_without_response_size)
+        except Exception:
+            max_write = None
+        self._chunk_size = plan_chunk_size(max_write)
+        await self._client.start_notify(n.uuid, self._notify)
 
     def _notify(self, _handle: int, data: bytearray) -> None:
         self.on_rx(bytes(data))
@@ -166,20 +220,38 @@ class BleTransport:
         response = has_write and not has_wowr
         try:
             self._write_chunks(data, response)
-        except Exception:
-            # JDY-family modules are flaky on a fresh connection: the link can
-            # blank its services right after discovery. Reconnect once and retry.
-            self._reconnect()
-            self._write_chunks(data, response)
+        except Exception as e:
+            # A length error means the payload is too big for the MTU/bridge;
+            # reconnecting cannot fix that, and _write_chunks already tried the
+            # 20-byte fallback. Surface it instead of retrying.
+            if _is_length_error(e):
+                raise TransportError(f"BLE write failed (payload too large?): {e}") from e
+            # Otherwise assume the JDY link blanked: reconnect once and retry.
+            try:
+                self._reconnect()
+                self._write_chunks(data, response)
+            except Exception as e2:
+                raise TransportError(f"BLE write failed after reconnect: {e2}") from e2
 
     def _write_chunks(self, data: bytes, response: bool) -> None:
         import asyncio
-        for i in range(0, len(data), 182):   # stay under default ATT MTU
-            chunk = data[i:i + 182]
-            fut = asyncio.run_coroutine_threadsafe(
-                self._client.write_gatt_char(self._write_char.uuid, chunk, response=response),
-                self._loop)
-            fut.result(timeout=self.timeout)
+        off = 0
+        while off < len(data):
+            chunk = data[off:off + self._chunk_size]
+            try:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._client.write_gatt_char(self._write_char.uuid, chunk, response=response),
+                    self._loop)
+                fut.result(timeout=self.timeout)
+            except Exception as e:
+                if self._chunk_size > ATT_MIN_PAYLOAD and _is_length_error(e):
+                    # MTU turned out smaller than reported (or the bridge is
+                    # stricter): drop to the guaranteed-safe ATT payload and
+                    # retry this same offset.
+                    self._chunk_size = ATT_MIN_PAYLOAD
+                    continue
+                raise
+            off += len(chunk)
 
     def _reconnect(self) -> None:
         import asyncio
