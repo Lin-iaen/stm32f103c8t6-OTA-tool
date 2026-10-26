@@ -58,6 +58,9 @@ Bootloader 启动时读 `F_SIZE`（`0x1FFFF7E0`）自动选择布局：
 `F_SIZE` 不在 64..128 范围时按 64 KB 处理。主机按 115 KB 上限接收镜像，
 真正上限由 `BL_QUERY` 报告并在擦除前检查。
 
+> **旧 Bootloader 升级**：只换 App 仍按 51 KB 上限；要用满 128 KB，需用
+> ST-Link/DAPLink 再烧一次 `release/bootloader-v0.1.1.bin` 到 `0x08000000`。
+
 ## 断电不变砖的原理
 
 1. **擦除前置标志**：`BL_START` 先写标志再擦。若擦除中断电，重启后
