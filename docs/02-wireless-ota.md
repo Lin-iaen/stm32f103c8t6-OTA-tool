@@ -60,6 +60,9 @@ Bootloader 启动时读 `F_SIZE`（`0x1FFFF7E0`）自动选择布局：
 
 > **旧 Bootloader 升级**：只换 App 仍按 51 KB 上限；要用满 128 KB，需用
 > ST-Link/DAPLink 再烧一次 `release/bootloader-v0.1.1.bin` 到 `0x08000000`。
+>
+> 镜像超过 `BL_QUERY` 上限时，主机在 `BL_START` 前发 `BL_ABORT`，设备清标志
+> 并复位回原 App；现有 App 不会被擦除，也不会停在 DFU。
 
 ## 断电不变砖的原理
 
