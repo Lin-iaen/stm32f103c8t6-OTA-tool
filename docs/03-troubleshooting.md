@@ -36,6 +36,22 @@
 - 首次连接 JDY 系模块可能瞬间断连，工具会自动重连一次；若仍失败，
   重跑命令。
 
+## 上一条命令被强杀后连不上
+
+如果上一条 `fwb` 命令被 Ctrl-C 或 `timeout` 强杀，操作系统可能仍保留 BLE
+连接，模块又不接受第二条连接，于是后续命令一律 `BLE connect ... failed`。
+
+```bash
+# Linux：先看有没有残留连接
+bluetoothctl info AA:BB:CC:DD:EE:FF | grep Connected
+
+# 有就手动断开
+bluetoothctl disconnect AA:BB:CC:DD:EE:FF
+```
+
+Windows 上对应的是「删除已配对的设备记录」再重连。工具正常退出时会主动
+断开；只有被强杀才会留下这种状态。
+
 ## BLE 诊断：先量 MTU 和模块的单包上限
 
 OTA 写失败时，先用 `tools/ble_probe.py` 把「OS 限制」和「模块限制」分开。
