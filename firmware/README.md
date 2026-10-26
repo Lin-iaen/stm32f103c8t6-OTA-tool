@@ -119,3 +119,16 @@ v0.1.3 的规则按标志语义区分：
 只把版本常量同步到 Bootloader v0.1.3（App 模式下 `fwb info` 报告的 BL 版本
 来自 App 内编译的常量，不同步会显示旧版本）。功能与 v0.1.39 相同，见
 [app/README.md](app/README.md#本版修复v0139)。
+
+## 验证状态
+
+| 项 | 结果 |
+|---|---|
+| 构建 | 干净 clone 重编与 `release/` 逐字节一致；CI 通过 |
+| 128 KB 板（ST-Link V2 + BLE 透传） | `bootloader v0.1.3, app v0.1.40`；`BL_QUERY` 报 117,760 B（115 KB） |
+| OTA | 4788 B 镜像 10 个 512 B 分块，erase→write→verify→jump 全部通过 |
+| 遥测 | 连看 14 帧 `vbat` 稳定 565–596 mV，无 `ADC invalid`（ADC 交替超时的修复生效） |
+| 参数 | `param set 1 70000` 被拒；`set 1 3000` 后复位仍为 3000；config 页 v2 布局正确 |
+| 中途取消 | App 请求 DFU 后取消 → 回 App；`BL_START` 后取消 → 留在 DFU，再 OTA 可恢复 |
+| 防砖 | 全片擦除后只写 512 B App 前缀 → 停在 DFU，未跳转 |
+| 64 KB 真板 | **未验证**，只有强制 64 KB 构建的链接期检查 |
