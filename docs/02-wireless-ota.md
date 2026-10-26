@@ -19,7 +19,7 @@ image: app.bin (4724 bytes)
 [verify]  92% CRC32 0xXXXXXXXX         ← CRC 校验
 [jump  ]  96%                          ← 跳转新 App
 [done  ] 100% App now (0, 1, 38)       ← 重新 PING 确认
-OTA complete: app v0.1.39
+OTA complete: app v0.1.40
 ```
 
 看到 `OTA complete` 即成功。
@@ -59,9 +59,9 @@ Bootloader 启动时读 `F_SIZE`（`0x1FFFF7E0`）自动选择布局：
 真正上限由 `BL_QUERY` 报告并在擦除前检查。
 
 > **旧 Bootloader 升级**：只换 App 仍按 51 KB 上限；要用满 128 KB，需用
-> ST-Link/DAPLink 再烧一次 `release/bootloader-v0.1.2.bin` 到 `0x08000000`。
+> ST-Link/DAPLink 再烧一次 `release/bootloader-v0.1.3.bin` 到 `0x08000000`。
 >
-> 镜像超过 `BL_QUERY` 上限时，主机在 `BL_START` 前发 `BL_ABORT`，设备清标志
+> 镜像超过 `BL_QUERY` 上限时，主机在 `BL_START` 前发 `BL_ABORT`，设备清 `OTA_MAGIC`
 > 并复位回原 App；现有 App 不会被擦除，也不会停在 DFU。
 
 ## 断电不变砖的原理
@@ -70,10 +70,18 @@ Bootloader 启动时读 `F_SIZE`（`0x1FFFF7E0`）自动选择布局：
    Bootloader 看到标志直接进 DFU，不会跳转到半成品。
 2. **验证后跳转**：`BL_JUMP` 只在 CRC 校验通过后执行；未验证时拒绝。
 3. **向量表兜底**：跳转前检查 App 首 8 字节（SP 在 SRAM 范围、Reset 为
-   Thumb 且落在 App 分区）。
+   Thumb 且落在 App 分区），并检查复位向量处确实是代码而不是 `0xFFFF`
+   （v0.1.3 起）。
 4. **三重 CRC**：传输流、Flash 回读、主机计算三者必须一致。
 
 因此任意时刻断电，最坏情况是设备停在 DFU 模式，重新运行 `fwb ota` 即可。
+
+> ⚠️ 第 1 条依赖 `BKP->DR1`，它由 VBAT/待机域供电。板上没有纽扣电池时，
+> **整机断电**会连标志一起丢。此时若 App 区已被擦除，靠第 3 条的代码检查
+> 兜底停在 DFU；但若断电恰好发生在写完第一个数据块之后（向量表已就位、
+> 代码区还是空的），v0.1.2 会误跳转并 HardFault。v0.1.3 的
+> “复位向量处必须是代码”检查正是为这种情况加的。要彻底消除该窗口，需要
+> 把“升级中”标记写进 Flash（预留一页元数据），这是后续版本的事。
 
 ## 传输方式对比
 

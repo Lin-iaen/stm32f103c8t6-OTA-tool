@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fwb-tool"
-version = "0.1.1"
+version = "0.1.2"
 description = "Wireless (BLE / serial) OTA flashing tool for STM32F103C8T6 boards running the f103-workbench bootloader"
 readme = "README.md"
 requires-python = ">=3.10"

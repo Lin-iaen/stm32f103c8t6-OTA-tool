@@ -5,8 +5,8 @@ flash_initial.py - one-time first-time flashing of the STM32F103C8T6.
 This is the ONLY step that needs a wired connection (SWD/ST-Link or DAPLink).
 It writes the two bundled images:
 
-    bootloader-v0.1.2.bin -> 0x08000000   (12 KB bootloader)
-    app-v0.1.39.bin       -> 0x08003000   (IO-console app)
+    bootloader-v0.1.3.bin -> 0x08000000   (12 KB bootloader)
+    app-v0.1.40.bin       -> 0x08003000   (IO-console app)
 
 After this, `fwb ota ... --ble <addr>` updates the app wirelessly forever.
 
@@ -30,8 +30,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "release"
 
-BOOTLOADER = RELEASE / "bootloader-v0.1.2.bin"
-APP = RELEASE / "app-v0.1.39.bin"
+BOOTLOADER = RELEASE / "bootloader-v0.1.3.bin"
+APP = RELEASE / "app-v0.1.40.bin"
 
 BL_ADDR = "0x08000000"
 APP_ADDR = "0x08003000"

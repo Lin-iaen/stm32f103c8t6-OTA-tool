@@ -77,8 +77,8 @@ ERR_NAMES = {
 }
 
 # Versions (mirror of firmware/common/protocol.h)
-BL_VERSION  = (0, 1, 2)
-APP_VERSION = (0, 1, 39)
+BL_VERSION  = (0, 1, 3)
+APP_VERSION = (0, 1, 40)
 
 
 def crc16_modbus(data: bytes) -> int:

@@ -31,7 +31,7 @@
 | `0x03` | `BL_DATA` | offset(4,BE) + chunk | status；offset 必须偶数且连续 |
 | `0x04` | `BL_VERIFY` | crc32(4,BE) | status；三重校验 |
 | `0x05` | `BL_JUMP` | 无 | status；仅在 verify 成功后允许 |
-| `0x06` | `BL_ABORT` | 无 | 无条件清 OTA 标志并复位；App 无效时 `main()` 仍停在 DFU |
+| `0x06` | `BL_ABORT` | 无 | 清 `OTA_MAGIC` 并复位（回 App）；升级中（`OTA_UPDATE_MAGIC`）**保留**标志、留在 DFU |
 
 `OTA_MAGIC = 0x4F54`（16 位，"OT"），写入 STM32F1 备份寄存器 DR1，用于
 标记"下次启动进入 DFU"。F1 的 BKP_DRx 为 16 位，故该常量必须 ≤ 0xFFFF。
@@ -102,7 +102,7 @@ pull: 0=none  1=up     2=down      (仅输入有效)
 ## 版本
 
 以固件 `firmware/common/protocol.h` 的 `BL_VERSION_*` / `APP_VERSION_*`
-为单一真相源。当前：bootloader `0.1.2`，app `0.1.39`。
+为单一真相源。当前：bootloader `0.1.3`，app `0.1.40`。
 
 ## 与自定义固件对接
 

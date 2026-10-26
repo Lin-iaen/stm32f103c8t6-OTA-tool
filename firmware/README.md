@@ -1,6 +1,6 @@
 # 固件源码（自动识别 64/128 KB Flash）
 
-本目录是 `release/bootloader-v0.1.2.bin` 与 `release/app-v0.1.39.bin`
+本目录是 `release/bootloader-v0.1.3.bin` 与 `release/app-v0.1.40.bin`
 的源码。**Bootloader 和 App 各只有一份**：启动时读取芯片的 `F_SIZE`
 寄存器（`0x1FFFF7E0`），在运行时选择 64 KB 或 128 KB 布局，不需要为
 两种芯片分别编译。
@@ -30,7 +30,7 @@ make -C firmware/app
 # 产物：firmware/app/app.bin / app.hex（约 4.6 KB）
 
 make -C firmware/app release
-# 产物：release/app-v0.1.39.bin / .hex（版本取自 protocol.h）
+# 产物：release/app-v0.1.40.bin / .hex（版本取自 protocol.h）
 ```
 
 把 Bootloader 烧录到 `0x08000000`。例如 ST-Link：
@@ -92,14 +92,30 @@ firmware/
 
 ## 版本变更
 
-### Bootloader v0.1.2
+### Bootloader v0.1.3
 
-- **`BL_ABORT` 现在真的能中止升级**：原来只清 `OTA_MAGIC`（App 请求 DFU 时写的值），
-  而 `BL_START` 写的是 `OTA_UPDATE_MAGIC`，所以"升级到一半取消"永远清不掉标志，
-  复位后又进 DFU。现在无条件清标志再复位；App 无效时 `main()` 仍停在 DFU，
-  不会误启动半截镜像。
+> ⚠️ **v0.1.2 有退化，请勿使用**：那一版让 `BL_ABORT` 无条件清标志。升级中途
+> 取消时 App 区已被 `BL_START` 擦掉，标志一清，`main()` 就落到
+> `bl_app_valid()`；它只看前两个向量，而第一个 512 B 数据块恰好包含这两个
+> 向量，于是被判定为"有效"，跳进一个代码已被擦除的镜像 → HardFault →
+> **只能 SWD 救**。这是上板实测到的，不是推断。
 
-### App v0.1.39
+v0.1.3 的规则按标志语义区分：
 
-见 [app/README.md](app/README.md#本版修复v0139)：栈峰值、帧重同步、遥测电压、
-ADC 启动时序、参数保存错误上报、uint16 参数、config 页 CRC 与版本。
+| 场景 | 标志 | `BL_ABORT` 行为 |
+|---|---|---|
+| App 请求 DFU（`APP_OTA_START`） | `OTA_MAGIC` | 清标志 → 复位 → **回原 App** |
+| 升级中途（`BL_START` 之后） | `OTA_UPDATE_MAGIC` | **保留**标志 → 复位 → 留在 DFU |
+
+升级中途 App 区已经被擦除，没有"原 App"可回；留在 DFU 才是正确且可恢复的
+状态（再发一次 OTA 即可）。主机在镜像超限时发的 `BL_ABORT` 发生在 `BL_START`
+之前，走第一行，所以"拒绝过大镜像后自动回原 App"仍然成立。
+
+另外 `bl_app_valid()` 增加一条检查：复位向量指向的地址必须是真实代码
+（半字不是 `0xFFFF`）。这样即使 `BKP` 标志因掉电丢失，也不会跳进半截镜像。
+
+### App v0.1.40
+
+只把版本常量同步到 Bootloader v0.1.3（App 模式下 `fwb info` 报告的 BL 版本
+来自 App 内编译的常量，不同步会显示旧版本）。功能与 v0.1.39 相同，见
+[app/README.md](app/README.md#本版修复v0139)。

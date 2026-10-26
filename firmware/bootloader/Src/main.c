@@ -199,6 +199,11 @@ int bl_app_valid(void) {
     if (sp < SRAM_BASE_ADDR || sp > (SRAM_BASE_ADDR + SRAM_SIZE) || (sp & 3u)) return 0;
     if ((rv & 1u) == 0u || rv < APP_BASE || rv >= config_page_addr()) return 0;
     if (rv == 0xFFFFFFFFu) return 0;
+    /* The two vectors alone are not enough: an interrupted OTA can leave the
+     * first chunk (which contains them) written while the rest of the image is
+     * erased. Require real code at the reset handler, otherwise the jump lands
+     * in 0xFFFF and hard-faults with no way back except SWD. */
+    if (*(volatile uint16_t *)(rv & ~1u) == 0xFFFFu) return 0;
     return 1;
 }
 
@@ -353,13 +358,22 @@ void bl_process_frame(const uint8_t *p, uint16_t len, uint8_t cmd) {
     }
     case BL_ABORT: {
         if (len != 0u) { err = PROTO_ERR_PARAM; break; }
-        /* Clear unconditionally: an app-requested DFU left OTA_MAGIC (0x4F54)
-         * here, an update in progress left OTA_UPDATE_MAGIC (0x5550). Testing
-         * only for OTA_MAGIC made "abort a running update" a no-op, so the
-         * device re-entered DFU on every reset with no software way out.
-         * main() still refuses to boot an invalid app, so clearing the flag
-         * cannot start a half-written image. */
-        if (bl_set_ota_flag(0) != 0) { err = PROTO_ERR_FLASH; break; }
+        /* The two flags mean different things:
+         *   OTA_MAGIC        - the App asked for DFU. Its image is intact,
+         *                      so clearing the flag returns to the App.
+         *   OTA_UPDATE_MAGIC - BL_START already erased the App region. There
+         *                      is nothing to return to, so KEEP the flag and
+         *                      stay in DFU.
+         * Clearing OTA_UPDATE_MAGIC here (v0.1.2 did) makes main() fall
+         * through to bl_app_valid(), which only inspects the first two
+         * vectors: after one BL_DATA chunk those still look valid, so the
+         * bootloader jumps into an image whose code is erased and hard-
+         * faults. The board is then unreachable except over SWD.
+         * Recovery from an aborted update is simply another OTA. */
+        if (bl_get_ota_flag() == OTA_MAGIC && bl_set_ota_flag(0) != 0) {
+            err = PROTO_ERR_FLASH;
+            break;
+        }
         NVIC_SystemReset();
         break;
     }

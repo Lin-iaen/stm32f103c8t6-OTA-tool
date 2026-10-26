@@ -1,6 +1,6 @@
 # App 源码（IO 控制台参考固件）
 
-本目录是 `release/app-v0.1.39.bin` / `.hex` 的源码。它是一个寄存器级、
+本目录是 `release/app-v0.1.40.bin` / `.hex` 的源码。它是一个寄存器级、
 无 HAL 的参考应用，把 F103C8T6 变成一个可通过 UART/BLE 远程操作的
 IO 控制台：
 
@@ -34,8 +34,8 @@ App 链接在 `0x08003000`，由 Bootloader 启动。Bootloader 已烧录时，�
 
 ```bash
 make -C firmware/app release
-# release/app-v0.1.39.bin
-# release/app-v0.1.39.hex
+# release/app-v0.1.40.bin
+# release/app-v0.1.40.hex
 ```
 
 修改 `APP_VERSION_MAJOR/MINOR/PATCH` 后重新构建即可得到新文件名。
@@ -102,6 +102,8 @@ firmware/app/
 ```
 
 ## 本版修复（v0.1.39）
+
+> v0.1.40 只同步了 Bootloader 版本常量，功能与 v0.1.39 相同。
 
 | 项 | 改动 |
 |---|---|

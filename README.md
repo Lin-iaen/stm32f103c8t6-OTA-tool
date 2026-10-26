@@ -15,7 +15,7 @@
 完成对一块 F103 开发板的无线 OTA。
 
 - **`fwb` 命令行工具**：扫描设备、读取版本、通过 BLE / 串口升级固件。
-- **预编译固件**：`release/bootloader-v0.1.2.bin` + `release/app-v0.1.39.bin`；
+- **预编译固件**：`release/bootloader-v0.1.3.bin` + `release/app-v0.1.40.bin`；
   Bootloader 与 App 源码都在 `firmware/`（同一份源码自动识别 64/128 KB）。
 - **自动容量识别**：同一份固件在 64 KB / 128 KB 芯片上分别使用 51 KB / 115 KB App 区。
 - **首次烧录脚本**：`tools/flash_initial.py`（唯一需要插线的一步）。
@@ -113,8 +113,8 @@ python tools\flash_initial.py
 
 ```powershell
 fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb   # 按服务过滤，记下地址
-fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.2, app v0.1.39
-fwb ota release\app-v0.1.39.bin --ble AA:BB:CC:DD:EE:FF
+fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.3, app v0.1.40
+fwb ota release\app-v0.1.40.bin --ble AA:BB:CC:DD:EE:FF
 ```
 
 输出会显示 `probe → erase → write → verify → jump → done` 全过程。
@@ -130,7 +130,7 @@ fwb scan-ble --timeout 8                       # 扫描附近 BLE
 fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb  # 无名字模块按服务过滤
 fwb scan-serial                                # 列出串口
 
-# IO 控制台固件附带命令（app v0.1.39）
+# IO 控制台固件附带命令（app v0.1.40）
 fwb monitor --ble AA:BB:CC:DD:EE:FF            # 实时遥测
 fwb gpio config PB5 out && fwb gpio write PB5 1
 fwb adc read 4
@@ -155,9 +155,9 @@ stm32f103c8t6-OTA-tool/
 │   ├── bootloader/           #   DFU 源码 / startup / 链接脚本 / Makefile
 │   └── app/                  #   IO 控制台参考固件 / startup / 链接脚本 / Makefile
 ├── release/                  # 预编译固件（可直接烧录）
-│   ├── bootloader-v0.1.2.bin    # → 0x08000000
-│   ├── app-v0.1.39.bin          # → 0x08003000（IO 控制台固件）
-│   └── app-v0.1.39.hex
+│   ├── bootloader-v0.1.3.bin    # → 0x08000000
+│   ├── app-v0.1.40.bin          # → 0x08003000（IO 控制台固件）
+│   └── app-v0.1.40.hex
 ├── tools/
 │   ├── flash_initial.py/.bat/.sh   # 首次烧录（需要 STM32CubeProgrammer）
 │   ├── ble_probe.py                # BLE 诊断：扫描 / MTU / PING / 包长断崖
@@ -193,15 +193,19 @@ Bootloader 启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），自�
 > `BL_QUERY` 在擦除前强制检查；把 100 KB 镜像发到 64 KB 板会被拒绝，
 > 不会擦除现有 App，主机随后发 `BL_ABORT` 让设备自动复位回原 App。
 >
-> **从旧版升级**：只 OTA `app-v0.1.39.bin` 仍可运行，但旧 Bootloader
+> **从旧版升级**：只 OTA `app-v0.1.40.bin` 仍可运行，但旧 Bootloader
 > 仍按 51 KB 上限；要用满 128 KB，需用 ST-Link/DAPLink 再烧一次
-> `release/bootloader-v0.1.2.bin`（地址 `0x08000000`）。
+> `release/bootloader-v0.1.3.bin`（地址 `0x08000000`）。
 >
-> **v0.1.2 / v0.1.39 修了什么**：`BL_ABORT` 原来清不掉"升级进行中"的标志，
-> 中途取消后复位又进 DFU（只能 SWD 救）；App 侧修了 1 KB 栈缓冲、`AA AA`
-> 帧重同步、遥测把 ADC 失败报成 0 mV、参数保存静默失败、心跳值截断，
-> 并把 config 页 CRC 与注释对齐（版本升到 v2，参数会回一次默认值）。
-> 详见 [firmware/README.md](firmware/README.md#版本变更)。
+> **v0.1.3 / v0.1.40 修了什么**：App 侧修了 1 KB 栈缓冲、`AA AA` 帧重同步、
+> 遥测把 ADC 失败报成 0 mV、参数保存静默失败、心跳值截断，并把 config 页
+> CRC 与注释对齐（版本升到 v2，参数会回一次默认值）。Bootloader 侧收紧了
+> `BL_ABORT` 与 `bl_app_valid()`：升级中途取消后留在 DFU（App 区已擦除，
+> 再 OTA 一次即可），不会再跳进半截镜像。详见
+> [firmware/README.md](firmware/README.md#版本变更)。
+>
+> ⚠️ **v0.1.2 不要使用**：它让 `BL_ABORT` 无条件清标志，升级中途取消后会
+> 跳进被擦除的镜像并 HardFault，只能 SWD 救。
 
 ## 从源码编译固件
 
