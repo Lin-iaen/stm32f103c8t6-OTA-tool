@@ -26,8 +26,9 @@ make -C firmware/app
 #   firmware/app/app.hex
 ```
 
-App 链接在 `0x08003000`，由 Bootloader 启动；首次也可以直接烧到该地址。
-**不要**烧到 `0x08000000`，那是 Bootloader 的位置。
+App 链接在 `0x08003000`，由 Bootloader 启动。Bootloader 已烧录时，首次
+也可以直接把 App 烧到该地址；**不要**烧到 `0x08000000`，那是 Bootloader
+的位置。
 
 生成与版本号一致的发布文件（版本取自 `firmware/common/protocol.h`）：
 
@@ -70,8 +71,9 @@ make -C firmware/app FLASH_SIZE_FORCE_KB=64
 1. 链接地址设为 `0x08003000`，向量表在启动时重定位到 `APP_BASE`
    （参考 `Src/main.c` 的 `SCB->VTOR = APP_BASE`）。
 2. 保留 `APP_PING`（`0x10`）与 `APP_GET_VERSION`（`0x11`）。
-3. 实现 `APP_OTA_START`（`0x13`）：收到 4 字节总长度后，在备份寄存器
-   `BKP->DR1` 写入 `OTA_MAGIC`，然后 `NVIC_SystemReset()`。
+3. 实现 `APP_OTA_START`（`0x13`）：收到 4 字节总长度后，先使能 PWR/BKP
+   时钟并置位 `PWR->CR` 的 `PWR_CR_DBP`，在备份寄存器 `BKP->DR1` 写入
+   `OTA_MAGIC`，然后 `NVIC_SystemReset()`。
 4. 镜像大小不要超过 `BL_QUERY` 报告的实际上限（64 KB 芯片 52,224 B，
    128 KB 芯片 117,760 B）。
 5. 链接脚本可直接复用 `STM32F103C8Tx_FLASH.ld`。

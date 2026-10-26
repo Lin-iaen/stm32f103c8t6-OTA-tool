@@ -211,7 +211,7 @@ make -C firmware/app
 ```
 
 把 Bootloader 烧到 `0x08000000`；App 正常通过 OTA 写入，首次也可以直接
-烧到 `0x08003000`。App 是参考实现，替换成自己的固件时只需实现
+烧到 `0x08003000`（需先烧 Bootloader）。App 是参考实现，替换成自己的固件时只需实现
 `APP_PING`、`APP_GET_VERSION` 和 `APP_OTA_START`，详见
 [firmware/app/README.md](firmware/app/README.md)。
 
