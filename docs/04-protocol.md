@@ -36,9 +36,11 @@
 `OTA_MAGIC = 0x4F54`（16 位，"OT"），写入 STM32F1 备份寄存器 DR1，用于
 标记"下次启动进入 DFU"。F1 的 BKP_DRx 为 16 位，故该常量必须 ≤ 0xFFFF。
 
-> 当前 64 KB 布局下 `BL_QUERY` 返回 `app_base=0x08003000`、
-> `max_size=52224`（51 KB）、`page=1024`。主机在连接前也会按同样的上限
-> 拒绝超长镜像；即使芯片实际有 128 KB，本版本也不会使用高 64 KB。
+> `app_base` 固定为 `0x08003000`，`page=1024`。`max_size` 由 Bootloader
+> 读取芯片 `F_SIZE`（`0x1FFFF7E0`）后决定：64 KB 芯片为 `52224`（51 KB），
+> 128 KB 芯片为 `117760`（115 KB）；读数不在 64..128 范围时按 64 KB 处理。
+> 主机先按 115 KB 上限接收镜像，真正的上限由 `BL_QUERY` 在擦除前检查：
+> 超限镜像会让 `BL_START` 返回 `PARAM`，现有 App 不会被擦除。
 
 ## 应用命令（0x10..0x2F）
 
@@ -99,7 +101,7 @@ pull: 0=none  1=up     2=down      (仅输入有效)
 ## 版本
 
 以固件 `firmware/common/protocol.h` 的 `BL_VERSION_*` / `APP_VERSION_*`
-为单一真相源。当前：bootloader `0.1.0`，app `0.1.25`。
+为单一真相源。当前：bootloader `0.1.1`，app `0.1.38`。
 
 ## 与自定义固件对接
 

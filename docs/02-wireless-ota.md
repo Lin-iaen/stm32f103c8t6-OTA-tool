@@ -14,12 +14,12 @@ fwb ota app.bin --ble AA:BB:CC:DD:EE:FF
 image: app.bin (4604 bytes)
 [probe ]   1%                          ← 探测当前是否在 Bootloader
 [probe ]   3% triggering OTA start ... ← 若在 App，令其置标志并复位
-[erase ]   2% erasing 51 KB app region ← 擦除 App 区
+[erase ]   2% erasing 115 KB app region ← 擦除 App 区（128 KB 板；64 KB 板为 51 KB）
 [write ]  ...  4604/4604 bytes         ← BL_DATA 512B（BLE 层再切 ≤120B）
 [verify]  92% CRC32 0xXXXXXXXX         ← CRC 校验
 [jump  ]  96%                          ← 跳转新 App
-[done  ] 100% App now (0, 1, 25)       ← 重新 PING 确认
-OTA complete: app v0.1.25
+[done  ] 100% App now (0, 1, 38)       ← 重新 PING 确认
+OTA complete: app v0.1.38
 ```
 
 看到 `OTA complete` 即成功。
@@ -42,15 +42,21 @@ PING / GET_VERSION ─────────────────▶ 新 Ap
 
 ## 分区布局
 
+Bootloader 启动时读 `F_SIZE`（`0x1FFFF7E0`）自动选择布局：
+
 ```
-0x08000000 ┌──────────────────┐
-           │ Bootloader 12KB  │  常驻，OTA 不动它
-0x08003000 ├──────────────────┤
-           │ App 51KB         │  OTA 目标
-0x0800FC00 ├──────────────────┤
-           │ Config 1KB       │  参数持久化
-0x08010000 └──────────────────┘
+64 KB 芯片                            128 KB 芯片
+0x08000000 ┌──────────────────┐       0x08000000 ┌──────────────────┐
+           │ Bootloader 12KB  │                  │ Bootloader 12KB  │
+0x08003000 ├──────────────────┤       0x08003000 ├──────────────────┤
+           │ App 51KB         │                  │ App 115KB        │
+0x0800FC00 ├──────────────────┤       0x0801FC00 ├──────────────────┤
+           │ Config 1KB       │                  │ Config 1KB       │
+0x08010000 └──────────────────┘       0x08020000 └──────────────────┘
 ```
+
+`F_SIZE` 不在 64..128 范围时按 64 KB 处理。主机按 115 KB 上限接收镜像，
+真正上限由 `BL_QUERY` 报告并在擦除前检查。
 
 ## 断电不变砖的原理
 

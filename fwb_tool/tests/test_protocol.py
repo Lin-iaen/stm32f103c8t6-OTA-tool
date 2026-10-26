@@ -199,7 +199,7 @@ def _ihex(rectype: int, addr: int, payload: bytes = b"") -> str:
 def test_load_image_rejects_oversize():
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
-        f.write(b"\x00" * (0xCC00 + 1))
+        f.write(b"\x00" * (0x1CC00 + 1))
     try:
         try:
             load_image(f.name)

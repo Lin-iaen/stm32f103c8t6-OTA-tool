@@ -142,7 +142,7 @@ fwb info --ble AA:BB:CC:DD:EE:FF
 期望输出：
 
 ```
-connected. bootloader v0.1.0, app v0.1.25
+connected. bootloader v0.1.1, app v0.1.38
 ```
 
 至此无线链路打通，可以进入 [02-wireless-ota.md](02-wireless-ota.md)。

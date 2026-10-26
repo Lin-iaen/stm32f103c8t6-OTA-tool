@@ -162,11 +162,15 @@ def parse_telemetry(payload: bytes) -> Telemetry:
 
 # ---------------- firmware image loading ----------------
 
-def load_image(path: str, app_base: int = 0x08003000, app_max: int = 0xCC00) -> bytes:
+def load_image(path: str, app_base: int = 0x08003000, app_max: int = 0x1CC00) -> bytes:
     """Load a .bin or Intel .hex firmware image, extracted from app_base.
 
     .hex: records are merged; the contiguous block starting at app_base is
-    returned. .bin: returned as-is (assumed to be linked at app_base)."""
+    returned. .bin: returned as-is (assumed to be linked at app_base).
+
+    app_max defaults to the largest possible app region (128KB layout). The
+    bootloader's BL_QUERY reports the real limit (51KB on a 64KB part) and
+    ota_update() rejects an image that does not fit."""
     data = open(path, "rb").read()
     if path.lower().endswith(".hex") or (not path.lower().endswith(".bin")
                                          and data[:1] == b":"):

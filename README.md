@@ -15,7 +15,8 @@
 完成对一块 F103 开发板的无线 OTA。
 
 - **`fwb` 命令行工具**：扫描设备、读取版本、通过 BLE / 串口升级固件。
-- **预编译固件**：`release/bootloader-v0.1.0.bin` + `release/app-v0.1.25.bin`。
+- **预编译固件**：`release/bootloader-v0.1.1.bin` + `release/app-v0.1.38.bin`。
+- **自动容量识别**：同一份固件在 64 KB / 128 KB 芯片上分别使用 51 KB / 115 KB App 区。
 - **首次烧录脚本**：`tools/flash_initial.py`（唯一需要插线的一步）。
 
 OTA 的核心安全设计：升级中断电不会变砖。Bootloader 常驻，只有在 CRC32
@@ -29,7 +30,7 @@ OTA 的核心安全设计：升级中断电不会变砖。Bootloader 常驻，�
 │  fwb 工具    │   115200 8N1    │  ┌────────────────────┐  │
 └─────────────┘                 │  │ Bootloader 12KB    │  │  常驻，负责收包/写 Flash
                                 │  ├────────────────────┤  │
-                                │  │ App 51KB           │  │  可被 OTA 替换
+                                │  │ App 51/115KB       │  │  可被 OTA 替换（自动识别）
                                 │  ├────────────────────┤  │
                                 │  │ Config 1KB         │  │  参数持久化
                                 │  └────────────────────┘  │
@@ -113,8 +114,8 @@ python tools\flash_initial.py
 
 ```powershell
 fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb   # 按服务过滤，记下地址
-fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.0, app v0.1.25
-fwb ota release\app-v0.1.25.bin --ble AA:BB:CC:DD:EE:FF
+fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.1, app v0.1.38
+fwb ota release\app-v0.1.38.bin --ble AA:BB:CC:DD:EE:FF
 ```
 
 输出会显示 `probe → erase → write → verify → jump → done` 全过程。
@@ -130,7 +131,7 @@ fwb scan-ble --timeout 8                       # 扫描附近 BLE
 fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb  # 无名字模块按服务过滤
 fwb scan-serial                                # 列出串口
 
-# IO 控制台固件附带命令（app v0.1.25）
+# IO 控制台固件附带命令（app v0.1.38）
 fwb monitor --ble AA:BB:CC:DD:EE:FF            # 实时遥测
 fwb gpio config PB5 out && fwb gpio write PB5 1
 fwb adc read 4
@@ -151,9 +152,9 @@ stm32f103c8t6-OTA-tool/
 │   ├── cli.py                #   fwb 命令
 │   └── tests/                #   19 项协议/切包回归
 ├── release/                  # 预编译固件（可直接烧录）
-│   ├── bootloader-v0.1.0.bin    # → 0x08000000
-│   ├── app-v0.1.25.bin          # → 0x08003000（IO 控制台固件）
-│   └── app-v0.1.25.hex
+│   ├── bootloader-v0.1.1.bin    # → 0x08000000
+│   ├── app-v0.1.38.bin          # → 0x08003000（IO 控制台固件）
+│   └── app-v0.1.38.hex
 ├── tools/
 │   ├── flash_initial.py/.bat/.sh   # 首次烧录（需要 STM32CubeProgrammer）
 │   ├── ble_probe.py                # BLE 诊断：扫描 / MTU / PING / 包长断崖
@@ -170,18 +171,24 @@ stm32f103c8t6-OTA-tool/
 
 ## Flash 分区
 
-| 区域 | 地址 | 大小 | 说明 |
+Bootloader 启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），自动选择布局：
+
+| 区域 | 64 KB 芯片 | 128 KB 芯片 | 说明 |
 |---|---|---|---|
-| Bootloader | `0x08000000` | 12 KB | 常驻，永不参与 OTA |
-| App | `0x08003000` | **51 KB** | OTA 目标，最大镜像 **52,224 B** |
-| Config | `0x0800FC00` | 1 KB | 运行时参数持久化 |
+| Bootloader | `0x08000000`，12 KB | 同左 | 常驻，永不参与 OTA |
+| App | `0x08003000`，**51 KB** | `0x08003000`，**115 KB** | OTA 目标 |
+| App 最大镜像 | **52,224 B** | **117,760 B** | `BL_QUERY` 报告实际上限 |
+| Config | `0x0800FC00`，1 KB | `0x0801FC00`，1 KB | 运行时参数持久化 |
 
 > **不要**把 App 烧到 `0x08000000`，那是 Bootloader 的位置。
 >
-> 这是按 **64 KB** 芯片做的保守布局。部分 C8T6 板子实际有 128 KB 可用，
-> 但本版本**只使用低 64 KB**，高 64 KB 不会被擦写。要突破 51 KB 上限，
-> 需要改固件源码里的 `flash_layout.h`、App 链接脚本和 Bootloader，重新编译
-> 并再烧一次 Bootloader，不能只换主机工具。
+> 同一份 Bootloader / App 二进制同时支持两种芯片：64 KB 用低 51 KB，
+> 128 KB 用满 115 KB。`F_SIZE` 读数不在 64..128 范围（例如某些克隆片
+> 返回 `0xFFFF`）时按 64 KB 保守处理，避免写到不存在的 Flash。
+>
+> 主机工具先按 115 KB 的上限接收镜像，真正的上限由 Bootloader 的
+> `BL_QUERY` 在擦除前强制检查；把 100 KB 镜像发到 64 KB 板会被拒绝，
+> 不会擦除现有 App。
 
 ## 测试
 
@@ -205,7 +212,7 @@ Intel HEX 解析。它们守护的是**主机与固件之间的协议契约**。
 
 | 项目 | 要求 |
 |---|---|
-| 芯片 | STM32F103C8T6（官方 64 KB Flash；部分批次实际 128 KB 可用，但本工具只使用低 64 KB） |
+| 芯片 | STM32F103C8T6（官方 64 KB Flash；部分批次实际 128 KB）。Bootloader 自动识别容量并按 51 / 115 KB 布局运行 |
 | 电脑 | Windows 10+ / Linux / macOS |
 | Python | 3.10+（仅 pip 安装方式需要） |
 | 无线 | BLE 4.0+ 适配器；Windows 需 10 1703+ |
