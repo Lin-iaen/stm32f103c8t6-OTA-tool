@@ -151,6 +151,14 @@ class BleTransport:
         try:
             fut.result(timeout=self.timeout)
         except Exception as e:  # noqa: BLE001
+            # Do not leak the background loop/thread when connect fails.
+            fut.cancel()
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+                self._thread.join(timeout=2)
+            finally:
+                self._loop = None
+                self._thread = None
             raise TransportError(f"BLE connect to {self.address} failed: {e}") from e
 
     async def _connect(self) -> None:
@@ -267,17 +275,30 @@ class BleTransport:
 
     def close(self) -> None:
         self._closing = True
-        if self._loop is not None:
-            import asyncio
-            async def _dc():
-                if self._client is not None:
-                    try:
-                        await self._client.disconnect()
-                    except Exception:
-                        pass
-            asyncio.run_coroutine_threadsafe(_dc(), self._loop).result(timeout=5)
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            self._loop = None
+        loop = self._loop
+        if loop is None:
+            return
+        import asyncio
+
+        async def _dc():
+            if self._client is not None:
+                try:
+                    await self._client.disconnect()
+                except Exception:
+                    pass
+
+        try:
+            asyncio.run_coroutine_threadsafe(_dc(), loop).result(timeout=5)
+        except Exception:
+            pass
+        try:
+            loop.call_soon_threadsafe(loop.stop)
+        except Exception:
+            pass
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+        self._loop = None
+        self._thread = None
 
     def __enter__(self):
         self.open()
@@ -294,12 +315,17 @@ def scan_serial():
     return [(p.device, f"{p.description} {p.hwid}".strip()) for p in ports]
 
 
-def scan_ble(timeout: float = 5.0):
-    """Scan BLE adverts. Returns [(address, name)]. Run in its own loop."""
+def scan_ble(timeout: float = 5.0, service: str | None = None):
+    """Scan BLE adverts. Returns [(address, name)]. Run in its own loop.
+
+    `service` filters on an advertised service UUID. Needed for modules that
+    do not advertise a name and use a random static address.
+    """
     import asyncio
     from bleak import BleakScanner
 
     async def _run():
-        return await BleakScanner.discover(timeout=timeout)
+        kwargs = {"service_uuids": [service]} if service else {}
+        return await BleakScanner.discover(timeout=timeout, **kwargs)
 
     return [(d.address, d.name or "?") for d in asyncio.run(_run())]

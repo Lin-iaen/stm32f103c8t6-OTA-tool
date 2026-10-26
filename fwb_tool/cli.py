@@ -63,7 +63,7 @@ def cmd_scan_serial(_args):
 
 def cmd_scan_ble(args):
     print(f"scanning BLE for {args.timeout}s ...")
-    for addr, name in scan_ble(args.timeout):
+    for addr, name in scan_ble(args.timeout, args.service):
         print(f"{addr:20s} {name}")
 
 
@@ -182,6 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("scan-ble", help="scan BLE adverts")
     p.add_argument("--timeout", type=float, default=5.0)
+    p.add_argument("--service", help="filter by advertised service UUID (e.g. 0000ffe0-...)")
     p.set_defaults(fn=cmd_scan_ble)
 
     p = sub.add_parser("info", help="ping + read versions")

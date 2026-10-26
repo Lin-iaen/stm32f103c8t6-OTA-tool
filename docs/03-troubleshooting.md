@@ -13,7 +13,12 @@
   ```
 
 - 关掉手机蓝牙 App，避免模块已被其他设备占用。
-- 模块名可能为空，显示为 `?`，先用模块厂商 App 确认真实地址。
+- 模块名可能为空，显示为 `?`，先用模块厂商 App 确认真实地址；或直接按服务
+  UUID 过滤（推荐，模块不广播名字时也能找到）：
+
+  ```powershell
+  fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb
+  ```
 
 ## `fwb info` 超时无响应
 
@@ -135,6 +140,7 @@ sudo usermod -aG dialout $USER   # 重新登录生效
 fwb --help
 fwb scan-serial
 fwb scan-ble --timeout 10
+fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb
 fwb info --ble AA:BB:CC:DD:EE:FF
 ```
 

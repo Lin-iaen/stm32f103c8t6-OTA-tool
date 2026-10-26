@@ -119,8 +119,11 @@ python tools\flash_initial.py --programmer "C:\Program Files\STMicroelectronics\
 ## 4. 建立无线连接
 
 ```powershell
-fwb scan-ble
+fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb
 ```
+
+模块不广播名字、地址又是随机静态地址时，按 `0000ffe0` 服务过滤最省事；
+不知道服务 UUID 时再退回通用扫描 `fwb scan-ble`。
 
 输出示例：
 

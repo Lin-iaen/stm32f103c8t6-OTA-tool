@@ -112,7 +112,7 @@ python tools\flash_initial.py
 ### 第 3 步：无线 OTA
 
 ```powershell
-fwb scan-ble                              # 记下模块地址
+fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb   # 按服务过滤，记下地址
 fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.0, app v0.1.25
 fwb ota release\app-v0.1.25.bin --ble AA:BB:CC:DD:EE:FF
 ```
@@ -127,6 +127,7 @@ fwb ota app.bin --ble AA:BB:CC:DD:EE:FF        # .bin 或 .hex 都支持
 fwb ota app.hex --port COM5                    # 走串口/BT-SPP
 fwb info --ble AA:BB:CC:DD:EE:FF               # 读版本
 fwb scan-ble --timeout 8                       # 扫描附近 BLE
+fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb  # 无名字模块按服务过滤
 fwb scan-serial                                # 列出串口
 
 # IO 控制台固件附带命令（app v0.1.25）
