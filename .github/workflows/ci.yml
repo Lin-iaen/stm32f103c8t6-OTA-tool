@@ -28,7 +28,7 @@ jobs:
         run: python -m fwb_tool scan-serial || true
 
   firmware:
-    name: Build bootloader
+    name: Build firmware
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,21 @@ jobs:
         run: make -C firmware/bootloader
       - name: Check bootloader fits its 12 KB slot
         run: test "$(stat -c%s firmware/bootloader/bl.bin)" -le 12288
-      - name: Build forced-64KB test variant
-        run: make -C firmware/bootloader clean && make -C firmware/bootloader FLASH_SIZE_FORCE_KB=64
-      - name: Check forced-64KB variant fits
-        run: test "$(stat -c%s firmware/bootloader/bl.bin)" -le 12288
+      - name: Build auto-detect app
+        run: make -C firmware/app
+      - name: Check app fits the 64 KB layout
+        run: test "$(stat -c%s firmware/app/app.bin)" -le 52224
+      - name: Build forced-64KB test variants
+        run: |
+          make -C firmware/bootloader clean && make -C firmware/bootloader FLASH_SIZE_FORCE_KB=64
+          make -C firmware/app clean && make -C firmware/app FLASH_SIZE_FORCE_KB=64
+      - name: Check forced-64KB variants fit
+        run: |
+          test "$(stat -c%s firmware/bootloader/bl.bin)" -le 12288
+          test "$(stat -c%s firmware/app/app.bin)" -le 52224
+      - name: Release must reject test builds
+        run: |
+          if make -C firmware/app release FLASH_SIZE_FORCE_KB=64; then
+            echo "release accepted a FLASH_SIZE_FORCE_KB test build" >&2
+            exit 1
+          fi

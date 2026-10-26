@@ -1,8 +1,9 @@
-# Bootloader 源码（自动识别 64/128 KB Flash）
+# 固件源码（自动识别 64/128 KB Flash）
 
-本目录是 `release/bootloader-v0.1.1.bin` 的源码。**只有一份 Bootloader**：
-启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），在运行时选择 64 KB 或
-128 KB 布局，不需要为两种芯片分别编译。
+本目录是 `release/bootloader-v0.1.1.bin` 与 `release/app-v0.1.38.bin`
+的源码。**Bootloader 和 App 各只有一份**：启动时读取芯片的 `F_SIZE`
+寄存器（`0x1FFFF7E0`），在运行时选择 64 KB 或 128 KB 布局，不需要为
+两种芯片分别编译。
 
 | 芯片 | App 区 | App 最大镜像 | 配置页 |
 |---|---|---|---|
@@ -13,8 +14,9 @@
 保守处理，避免写到不存在的 Flash。
 
 Bootloader 自身固定在 `0x08000000`，占用 12 KB；布局选择只影响 App 擦除/
-写入的上界和配置页地址。App 源码不在本仓库范围内，`release/app-v0.1.38.bin`
-是配套预编译镜像。
+写入的上界和配置页地址。`firmware/app` 是配套的 IO 控制台参考固件，
+也可以替换成自己的 App——只需实现 `APP_PING`、`APP_GET_VERSION` 和
+`APP_OTA_START`，详见 [app/README.md](app/README.md)。
 
 ## 编译
 
@@ -23,16 +25,24 @@ Bootloader 自身固定在 `0x08000000`，占用 12 KB；布局选择只影响 A
 ```bash
 make -C firmware/bootloader
 # 产物：firmware/bootloader/bl.bin（约 3.3 KB）
+
+make -C firmware/app
+# 产物：firmware/app/app.bin / app.hex（约 4.6 KB）
+
+make -C firmware/app release
+# 产物：release/app-v0.1.38.bin / .hex（版本取自 protocol.h）
 ```
 
-烧录到 `0x08000000`。例如 ST-Link：
+把 Bootloader 烧录到 `0x08000000`。例如 ST-Link：
 
 ```bash
 st-flash write firmware/bootloader/bl.bin 0x08000000
 st-flash reset
 ```
 
-默认构建就是自动识别版，和 `release/bootloader-v0.1.1.bin` 对应。
+App 正常通过 OTA 写入；首次也可以直接烧到 `0x08003000`（必须在
+Bootloader 之后）。默认构建就是自动识别版，和 `release/` 中的预编译
+镜像对应。
 
 ## 64 KB 布局测试
 
@@ -41,13 +51,17 @@ st-flash reset
 ```bash
 make -C firmware/bootloader clean
 make -C firmware/bootloader FLASH_SIZE_FORCE_KB=64
+
+make -C firmware/app clean
+make -C firmware/app FLASH_SIZE_FORCE_KB=64
 ```
 
 此时 `BL_QUERY` 返回 `max_size=52224`，60 KB 镜像会在主机侧被拒绝，
-直接发 `BL_START` 也会返回 `PARAM`。
+直接发 `BL_START` 也会返回 `PARAM`；App 则把配置页写到 `0x0800FC00`，
+不会碰 128 KB 的配置页。
 
-> 这个强制版本只用于验证，**不要**作为正式发布固件；正式版请用默认构建。
-> 验证完成后记得重新编译并烧回默认的自动识别版。
+> 这个强制版本只用于验证，**不要**作为正式发布固件；`make release`
+> 会拒绝这种构建。验证完成后记得重新编译并烧回默认的自动识别版。
 
 ## 目录
 
@@ -57,12 +71,19 @@ firmware/
 │   ├── flash_layout.h    # F_SIZE 读取、64/128KB 布局、配置页/上限
 │   ├── protocol.h        # 线协议与版本号（Bootloader/App/主机共用）
 │   ├── crc.c / crc.h     # CRC16-MODBUS / CRC32-IEEE
-└── bootloader/
-    ├── Src/main.c        # DFU 状态机、Flash 操作、USART1
-    ├── Inc/              # bootloader.h / 寄存器定义
-    ├── startup_stm32f103xb.s
+├── bootloader/
+│   ├── Src/main.c        # DFU 状态机、Flash 操作、USART1
+│   ├── Inc/              # bootloader.h / 寄存器定义
+│   ├── startup_stm32f103xb.s
+│   ├── STM32F103C8Tx_FLASH.ld
+│   └── Makefile
+└── app/
+    ├── Src/main.c        # IO 控制台 + OTA 触发
+    ├── Inc/              # 寄存器定义
+    ├── startup_stm32f103xb_app.s
     ├── STM32F103C8Tx_FLASH.ld
-    └── Makefile
+    ├── Makefile
+    └── README.md
 ```
 
 协议细节见 [../docs/04-protocol.md](../docs/04-protocol.md)。

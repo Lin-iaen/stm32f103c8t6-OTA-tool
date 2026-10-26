@@ -16,7 +16,7 @@
 
 - **`fwb` 命令行工具**：扫描设备、读取版本、通过 BLE / 串口升级固件。
 - **预编译固件**：`release/bootloader-v0.1.1.bin` + `release/app-v0.1.38.bin`；
-  Bootloader 源码在 `firmware/`（同一份源码自动识别 64/128 KB）。
+  Bootloader 与 App 源码都在 `firmware/`（同一份源码自动识别 64/128 KB）。
 - **自动容量识别**：同一份固件在 64 KB / 128 KB 芯片上分别使用 51 KB / 115 KB App 区。
 - **首次烧录脚本**：`tools/flash_initial.py`（唯一需要插线的一步）。
 
@@ -150,9 +150,10 @@ stm32f103c8t6-OTA-tool/
 │   ├── ota.py                #   OTA 流程编排
 │   ├── cli.py                #   fwb 命令
 │   └── tests/                #   19 项协议/切包回归
-├── firmware/                 # Bootloader 源码（自动识别 64/128KB）
+├── firmware/                 # Bootloader + App 源码（自动识别 64/128KB）
 │   ├── common/               #   flash_layout / protocol / crc
-│   └── bootloader/           #   DFU 源码 / startup / 链接脚本 / Makefile
+│   ├── bootloader/           #   DFU 源码 / startup / 链接脚本 / Makefile
+│   └── app/                  #   IO 控制台参考固件 / startup / 链接脚本 / Makefile
 ├── release/                  # 预编译固件（可直接烧录）
 │   ├── bootloader-v0.1.1.bin    # → 0x08000000
 │   ├── app-v0.1.38.bin          # → 0x08003000（IO 控制台固件）
@@ -196,22 +197,32 @@ Bootloader 启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），自�
 > 仍按 51 KB 上限；要用满 128 KB，需用 ST-Link/DAPLink 再烧一次
 > `release/bootloader-v0.1.1.bin`（地址 `0x08000000`）。
 
-## 从源码编译 Bootloader
+## 从源码编译固件
 
-`firmware/` 包含自动识别版 Bootloader 源码（`common` + `bootloader`）。
-需要 `arm-none-eabi-gcc` 和 `make`：
+`firmware/` 包含自动识别版 Bootloader 与 IO 控制台 App 源码
+（`common` + `bootloader` + `app`）。需要 `arm-none-eabi-gcc` 和 `make`：
 
 ```bash
 make -C firmware/bootloader
-# 产物：firmware/bootloader/bl.bin
+# 产物：firmware/bootloader/bl.bin（约 3.3 KB）
+
+make -C firmware/app
+# 产物：firmware/app/app.bin / app.hex（约 4.6 KB）
 ```
 
-烧到 `0x08000000`。默认构建同时支持 64/128 KB；在 128 KB 板上验证 64 KB
-布局时，用同一份源码强制编译：
+把 Bootloader 烧到 `0x08000000`；App 正常通过 OTA 写入，首次也可以直接
+烧到 `0x08003000`。App 是参考实现，替换成自己的固件时只需实现
+`APP_PING`、`APP_GET_VERSION` 和 `APP_OTA_START`，详见
+[firmware/app/README.md](firmware/app/README.md)。
+
+默认构建同时支持 64/128 KB；在 128 KB 板上验证 64 KB 布局时，用同一份
+源码强制编译（`make -C firmware/app release` 会拒绝这种测试构建）：
 
 ```bash
 make -C firmware/bootloader clean
 make -C firmware/bootloader FLASH_SIZE_FORCE_KB=64
+make -C firmware/app clean
+make -C firmware/app FLASH_SIZE_FORCE_KB=64
 ```
 
 强制版只用于测试，不要作为正式发布固件。详见

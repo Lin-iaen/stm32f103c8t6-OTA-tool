@@ -24,3 +24,4 @@ firmware/**/*.d
 firmware/**/*.elf
 firmware/**/*.map
 firmware/**/*.hex
+firmware/**/*.bin

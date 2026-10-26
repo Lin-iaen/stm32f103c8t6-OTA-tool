@@ -10,8 +10,10 @@ https://gitee.com/kurui365/smart-robot-car
 | `fwb_tool/ota.py` | 重写 | OTA 状态流程照搬原项目 `serial_comm.py` 的设计 |
 | `fwb_tool/transport.py` | 重写 | 串口/BLE 双传输抽象 |
 | `firmware/common`, `firmware/bootloader` | 移植/改写 | Bootloader 源码；DFU 状态机与启动逻辑源自原项目 |
-| `release/*.bin` | 派生 | 由 f103-workbench 的 Bootloader 与 App 编译产物导出 |
+| `firmware/app` | 改写 | IO 控制台参考 App；帧解析/命令派发架构源自原项目，外设与 OTA 触发按本工具重写 |
+| `release/*.bin` | 派生 | 由本仓库 `firmware/bootloader` 与 `firmware/app` 编译产物导出 |
 | Bootloader 设计 | 移植 | DFU 状态机 / 防砖判定 / 启动逻辑源自原项目 |
+| App 架构 | 改写 | 裸机超级循环 / 无锁 SPSC 串口缓冲 / 帧状态机源自原项目 |
 
 原项目及衍生工程 MIT 许可证全文：
 
