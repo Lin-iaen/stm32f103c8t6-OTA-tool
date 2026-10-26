@@ -84,12 +84,10 @@ pip install -e ".[ble]"        # [ble] 是无线升级必需的
 fwb scan-serial                # 出现帮助即安装成功
 ```
 
-**方式 B：单文件 exe（目标机无需 Python）**
+**方式 B：单文件 exe（可选，目标机无需 Python）**
 
-下载 [Releases](https://github.com/Lin-iaen/stm32f103c8t6-OTA-tool/releases)
-里的 `fwb.exe` 直接运行。
-
-想自己构建 exe：
+如果 [Releases](https://github.com/Lin-iaen/stm32f103c8t6-OTA-tool/releases)
+页面提供了 `fwb.exe`，下载后直接运行；否则在任意有 Python 的机器上构建：
 
 ```powershell
 pip install -e ".[dev]"
