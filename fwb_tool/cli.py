@@ -96,10 +96,12 @@ def cmd_ota(args):
 
 
 def _monitor_ticks(n: int):
-    """Yield once per 1 s telemetry interval. n == 0 means "forever".
+    """Yield once per second of listening. n == 0 means "forever".
 
-    Kept as a generator so `--n 3` cannot fall back into the endless branch
-    when the counter reaches 0 (the bug in the old loop).
+    `--n` is a duration, not a report count: the device paces telemetry with
+    heartbeat_ms, so the number of frames printed for a given duration depends
+    on that parameter. Kept as a generator so `--n 3` cannot fall back into the
+    endless branch when the counter reaches 0 (the bug in the old loop).
     """
     count = 0
     while n == 0 or count < n:
@@ -121,6 +123,10 @@ def cmd_monitor(args):
             pass
         for _ in _monitor_ticks(args.n):
             time.sleep(1.0)
+        # BLE disconnect takes a couple of seconds and notifications keep
+        # arriving until it completes; without this, `--n 5` printed 6-7
+        # lines. Reports are counted, so stop printing once the count is met.
+        dev.on_telemetry = None
 
 
 def cmd_gpio(args):
@@ -207,7 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p); p.set_defaults(fn=cmd_ota)
 
     p = sub.add_parser("monitor", help="live telemetry")
-    p.add_argument("--n", type=int, default=0, help="number of reports (0=forever)")
+    p.add_argument("--n", type=int, default=0,
+                   help="listen for N seconds (0 = forever); one report per heartbeat")
     _common(p); p.set_defaults(fn=cmd_monitor)
 
     p = sub.add_parser("gpio", help="gpio config/write/read")

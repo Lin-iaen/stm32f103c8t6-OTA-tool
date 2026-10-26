@@ -131,7 +131,7 @@ fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb  # 无名字模块�
 fwb scan-serial                                # 列出串口
 
 # IO 控制台固件附带命令（app v0.1.40）
-fwb monitor --ble AA:BB:CC:DD:EE:FF            # 实时遥测
+fwb monitor --ble AA:BB:CC:DD:EE:FF            # 实时遥测（--n 秒数，0=一直）
 fwb gpio config PB5 out && fwb gpio write PB5 1
 fwb adc read 4
 fwb pwm set 0 1000 500                         # ch0 1kHz 50%
@@ -246,7 +246,7 @@ python -m pytest fwb_tool/tests/ -q      # 应 24 passed
 ```
 
 测试覆盖 CRC 标准向量、帧收发与解析容错、命令码冻结校验、镜像加载与
-Intel HEX 解析，以及 `monitor --n` 退出、连接失败信息、无名字设备显示等
+Intel HEX 解析，以及 `monitor --n`（监听 N 秒）退出、连接失败信息、无名字设备显示等
 CLI 回归。它们守护的是**主机与固件之间的协议契约**。
 
 ## 为什么断电不变砖
