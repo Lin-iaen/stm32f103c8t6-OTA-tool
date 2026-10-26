@@ -31,7 +31,7 @@
 | `0x03` | `BL_DATA` | offset(4,BE) + chunk | status；offset 必须偶数且连续 |
 | `0x04` | `BL_VERIFY` | crc32(4,BE) | status；三重校验 |
 | `0x05` | `BL_JUMP` | 无 | status；仅在 verify 成功后允许 |
-| `0x06` | `BL_ABORT` | 无 | status；App 有效时清标志并复位 |
+| `0x06` | `BL_ABORT` | 无 | 无条件清 OTA 标志并复位；App 无效时 `main()` 仍停在 DFU |
 
 `OTA_MAGIC = 0x4F54`（16 位，"OT"），写入 STM32F1 备份寄存器 DR1，用于
 标记"下次启动进入 DFU"。F1 的 BKP_DRx 为 16 位，故该常量必须 ≤ 0xFFFF。
@@ -66,6 +66,7 @@
 ```
 uptime_ms(4,BE) | vbat_mv(2,BE) | flags(1)
 flags.bit0 = 任一 PWM 通道激活
+flags.bit1 = vbat 无效（ADC 读取失败，vbat_mv 无意义）
 ```
 
 ## 状态码
