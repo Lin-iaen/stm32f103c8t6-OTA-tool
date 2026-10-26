@@ -223,3 +223,40 @@ def test_parse_pin():
             assert False
         except ValueError:
             pass
+
+
+# ---------------- CLI / diagnostics regressions ----------------
+
+def test_monitor_ticks_stops_after_n():
+    """`fwb monitor --n 3` must exit; the old loop fell back to "forever"."""
+    from fwb_tool.cli import _monitor_ticks
+    assert list(_monitor_ticks(3)) == [0, 1, 2]
+
+
+def test_monitor_ticks_zero_means_forever():
+    from itertools import islice
+    from fwb_tool.cli import _monitor_ticks
+    assert list(islice(_monitor_ticks(0), 5)) == [0, 1, 2, 3, 4]
+
+
+def test_scan_label_shows_services_when_name_missing():
+    from fwb_tool.transport import scan_label
+    assert scan_label("JDY-31-SPP", []) == "JDY-31-SPP"
+    assert scan_label(None, ["0000ffe0-0000-1000-8000-00805f9b34fb"]) == "{ffe0}"
+    assert scan_label(None, ["0000ffe0-0000-1000-8000-00805f9b34fb",
+                             "0000ffe1-0000-1000-8000-00805f9b34fb"]) == "{ffe0,ffe1}"
+    assert scan_label(None, []) == "?"
+
+
+def test_connect_error_keeps_exception_type_when_str_is_empty():
+    """WinRT HRESULT errors can have an empty str(); the message must not be."""
+    from fwb_tool.transport import _connect_error_message
+
+    class EmptyError(Exception):
+        def __str__(self):
+            return ""
+
+    msg = _connect_error_message("AA:BB:CC:DD:EE:FF", EmptyError())
+    assert "AA:BB:CC:DD:EE:FF" in msg
+    assert "EmptyError" in msg
+    assert msg.rstrip().endswith("EmptyError()")

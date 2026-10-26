@@ -3,7 +3,7 @@
 > 给 STM32F103C8T6（Blue Pill）做**无线固件升级**的命令行工具。
 > 插一次线烧好 Bootloader，之后用 BLE 或串口反复换 App，不再需要下载器。
 
-[![tests](https://img.shields.io/badge/tests-19%20passed-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-23%20passed-brightgreen)](#测试)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 
@@ -149,7 +149,7 @@ stm32f103c8t6-OTA-tool/
 │   ├── device.py             #   请求-响应层 + 固件镜像加载
 │   ├── ota.py                #   OTA 流程编排
 │   ├── cli.py                #   fwb 命令
-│   └── tests/                #   19 项协议/切包回归
+│   └── tests/                #   23 项协议/切包/CLI 回归
 ├── firmware/                 # Bootloader + App 源码（自动识别 64/128KB）
 │   ├── common/               #   flash_layout / protocol / crc
 │   ├── bootloader/           #   DFU 源码 / startup / 链接脚本 / Makefile
@@ -232,11 +232,12 @@ make -C firmware/app FLASH_SIZE_FORCE_KB=64
 
 ```powershell
 pip install -e ".[dev]"
-python -m pytest fwb_tool/tests/ -q      # 应 19 passed
+python -m pytest fwb_tool/tests/ -q      # 应 23 passed
 ```
 
 测试覆盖 CRC 标准向量、帧收发与解析容错、命令码冻结校验、镜像加载与
-Intel HEX 解析。它们守护的是**主机与固件之间的协议契约**。
+Intel HEX 解析，以及 `monitor --n` 退出、连接失败信息、无名字设备显示等
+CLI 回归。它们守护的是**主机与固件之间的协议契约**。
 
 ## 为什么断电不变砖
 

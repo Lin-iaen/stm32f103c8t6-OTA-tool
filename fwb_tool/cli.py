@@ -33,7 +33,7 @@ import time
 from . import protocol as P
 from .device import Device, DeviceError, Telemetry, load_image
 from .ota import ota_update
-from .transport import TransportError, scan_serial, scan_ble
+from .transport import TransportError, scan_label, scan_serial, scan_ble
 
 
 def _open_device(args, on_telemetry=None) -> Device:
@@ -63,8 +63,12 @@ def cmd_scan_serial(_args):
 
 def cmd_scan_ble(args):
     print(f"scanning BLE for {args.timeout}s ...")
-    for addr, name in scan_ble(args.timeout, args.service):
-        print(f"{addr:20s} {name}")
+    rows = scan_ble(args.timeout, args.service)
+    for addr, name, services in rows:
+        print(f"{addr:20s} {scan_label(name, services)}")
+    if rows and not any(name for _addr, name, _services in rows):
+        print("\n(no device advertises a name; {uuid} is the first advertised "
+              "service. Narrow the list with --service 0000ffe0-...)")
 
 
 def cmd_info(args):
@@ -91,6 +95,18 @@ def cmd_ota(args):
     print(f"OTA complete: app v{'.'.join(map(str, result['app']))}")
 
 
+def _monitor_ticks(n: int):
+    """Yield once per 1 s telemetry interval. n == 0 means "forever".
+
+    Kept as a generator so `--n 3` cannot fall back into the endless branch
+    when the counter reaches 0 (the bug in the pre-0.1.1 loop).
+    """
+    count = 0
+    while n == 0 or count < n:
+        yield count
+        count += 1
+
+
 def cmd_monitor(args):
     def show(t: Telemetry):
         up = t.uptime_ms / 1000
@@ -102,11 +118,8 @@ def cmd_monitor(args):
             show(dev.read_telemetry())
         except Exception:
             pass
-        n = args.n
-        while n == 0 or n > 0:
+        for _ in _monitor_ticks(args.n):
             time.sleep(1.0)
-            if n:
-                n -= 1
 
 
 def cmd_gpio(args):

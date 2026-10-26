@@ -59,6 +59,17 @@ class TransportError(RuntimeError):
     pass
 
 
+def _connect_error_message(address: str, exc: BaseException) -> str:
+    """Human-readable connect failure.
+
+    bleak/WinRT raises HRESULT-backed exceptions whose str() is sometimes
+    empty, which used to leave the user with a bare "failed: ". Always keep
+    the exception type, and fall back to repr() when the message is blank.
+    """
+    detail = str(exc).strip() or repr(exc)
+    return f"BLE connect to {address} failed: {type(exc).__name__}: {detail}"
+
+
 class SerialTransport:
     """pyserial pipe: USB-TTL adapter, or a BLE module exposed as a COM port."""
 
@@ -159,7 +170,7 @@ class BleTransport:
             finally:
                 self._loop = None
                 self._thread = None
-            raise TransportError(f"BLE connect to {self.address} failed: {e}") from e
+            raise TransportError(_connect_error_message(self.address, e)) from e
 
     async def _connect(self) -> None:
         import asyncio
@@ -315,8 +326,46 @@ def scan_serial():
     return [(p.device, f"{p.description} {p.hwid}".strip()) for p in ports]
 
 
+def _advertised_services(device) -> list[str]:
+    """Advertised service UUIDs from a bleak BLEDevice, across backends.
+
+    BlueZ exposes them as details["props"]["UUIDs"]; newer bleak also fills a
+    `metadata` dict on some backends. Returns [] when neither is available.
+    """
+    details = getattr(device, "details", None)
+    if isinstance(details, dict):
+        props = details.get("props") or {}
+        uuids = list(props.get("UUIDs") or [])
+        if uuids:
+            return [str(u) for u in uuids]
+    meta = getattr(device, "metadata", None)
+    if isinstance(meta, dict):
+        return [str(u) for u in (meta.get("uuids") or [])]
+    return []
+
+
+def scan_label(name: str | None, services: list[str]) -> str:
+    """One column for `fwb scan-ble`: name, else the advertised service UUIDs.
+
+    Transparent bridges usually advertise no name (random static address), so
+    printing "?" made the scan list useless. Showing the first service UUIDs
+    is enough to recognise the module and to know what to pass to --service.
+    """
+    if name:
+        return name
+    if services:
+        return "{" + ",".join(_short_uuid(u) for u in services[:3]) + "}"
+    return "?"
+
+
+def _short_uuid(uuid: str) -> str:
+    """'0000ffe0-0000-1000-8000-00805f9b34fb' -> 'ffe0'."""
+    head = uuid.split("-")[0].lower()
+    return head[-4:] if len(head) == 8 and head.startswith("0000") else head
+
+
 def scan_ble(timeout: float = 5.0, service: str | None = None):
-    """Scan BLE adverts. Returns [(address, name)]. Run in its own loop.
+    """Scan BLE adverts. Returns [(address, name, service_uuids)].
 
     `service` filters on an advertised service UUID. Needed for modules that
     do not advertise a name and use a random static address.
@@ -328,4 +377,4 @@ def scan_ble(timeout: float = 5.0, service: str | None = None):
         kwargs = {"service_uuids": [service]} if service else {}
         return await BleakScanner.discover(timeout=timeout, **kwargs)
 
-    return [(d.address, d.name or "?") for d in asyncio.run(_run())]
+    return [(d.address, d.name, _advertised_services(d)) for d in asyncio.run(_run())]
