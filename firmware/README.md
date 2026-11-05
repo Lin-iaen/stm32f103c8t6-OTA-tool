@@ -1,6 +1,6 @@
 # 固件源码（自动识别 64/128 KB Flash）
 
-本目录是 `release/bootloader-v0.1.3.bin` 与 `release/app-v0.1.40.bin`
+本目录是 `release/bootloader-v0.1.4.bin` 与 `release/app-v0.1.41.bin`
 的源码。**Bootloader 和 App 各只有一份**：启动时读取芯片的 `F_SIZE`
 寄存器（`0x1FFFF7E0`），在运行时选择 64 KB 或 128 KB 布局，不需要为
 两种芯片分别编译。
@@ -30,7 +30,7 @@ make -C firmware/app
 # 产物：firmware/app/app.bin / app.hex（约 4.6 KB）
 
 make -C firmware/app release
-# 产物：release/app-v0.1.40.bin / .hex（版本取自 protocol.h）
+# 产物：release/app-v0.1.41.bin / .hex（版本取自 protocol.h）
 ```
 
 把 Bootloader 烧录到 `0x08000000`。例如 ST-Link：
@@ -120,13 +120,44 @@ v0.1.3 的规则按标志语义区分：
 来自 App 内编译的常量，不同步会显示旧版本）。功能与 v0.1.39 相同，见
 [app/README.md](app/README.md#本版修复v0139)。
 
+### Bootloader v0.1.4
+
+每次应答前增加 2 ms 静默期（`bl_delay_ms`，用 DWT 周期计数实现，与编译优化无关）。
+
+某些透传 BLE 模块（实测 VG6328A / I6328A）在转发完一次下行 GATT 写入后，
+其 UART RX 需要约 1 ms 才能重新稳定；在这个窗口内到达的字节会被采错。
+Bootloader 收到数据后几微秒内就应答，所以每次都撞进窗口——实测 `BL_QUERY`
+应答 **0/12** 帧头完好（`aa 55 81` 被采成 `a9 ab 15`，而 LEN、payload、CRC
+全部正确）。
+
+用专用测试固件（下行 1 字节触发、MCU 从内存发固定 200 字节）扫应答延时，
+每组 6 次：
+
+| 应答前延时 | 头部损坏字节数 |
+|---|---|
+| 0 ms | 3（6/6 次） |
+| 1~7 ms | 0（6/6 次，全部干净） |
+
+取 2 ms，给 1 ms 阈值留一倍余量。整次 OTA 约 70 个数据帧，累计多花约 0.15 s。
+修复后 `BL_QUERY` 20/20 帧完好，35.9 KB 真机 OTA 通过（CRC32 `0x0DA7AE09`）。
+
+> **不能用填充字节代替延时**：先试过在应答前发 12 个 `0x55`，填充字节完好
+> 到达，但紧随其后的帧头照样被破坏。这个窗口是时间维度的，不是字节数维度的，
+> 填充只会被窗口消耗掉。
+
+### App v0.1.41
+
+同一原因，`send_frame()` 开头加 2 ms 静默（App 在主循环里应答，多数时候躲过了
+窗口，实测 96% 帧完好；加延时后 20/20）。同时把 App 内编译的 Bootloader 版本
+常量同步到 v0.1.4，避免 `fwb info` 报出旧版本号。
+
 ## 验证状态
 
 | 项 | 结果 |
 |---|---|
 | 构建 | 干净 clone 重编与 `release/` 逐字节一致；CI 通过 |
-| 128 KB 板（ST-Link V2 + BLE 透传） | `bootloader v0.1.3, app v0.1.40`；`BL_QUERY` 报 117,760 B（115 KB） |
-| OTA | 4788 B 镜像 10 个 512 B 分块，erase→write→verify→jump 全部通过 |
+| 128 KB 板（ST-Link V2 + BLE 透传） | `bootloader v0.1.4, app v0.1.41`；`BL_QUERY` 报 117,760 B（115 KB） |
+| OTA | 4800 B 镜像，erase→write→verify→jump 全部通过 |
 | 遥测 | 连看 14 帧 `vbat` 稳定 565–596 mV，无 `ADC invalid`（ADC 交替超时的修复生效） |
 | 参数 | `param set 1 70000` 被拒；`set 1 3000` 后复位仍为 3000；config 页 v2 布局正确 |
 | 中途取消 | App 请求 DFU 后取消 → 回 App；`BL_START` 后取消 → 留在 DFU，再 OTA 可恢复 |

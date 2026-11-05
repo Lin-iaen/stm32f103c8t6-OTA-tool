@@ -30,6 +30,46 @@
    `fwb info` 多跑几次。
 5. 串口方式先验证：用 USB-TTL 直连 PA9/PA10，排除无线问题。
 
+## BLE 模块是"单特征值"还是"write/notify 分离"
+
+透传模块有两种布局，工具会自动识别：
+
+| 布局 | 例子 | 特征值 |
+|---|---|---|
+| combined | JDY-69 / HC-08 | 同一个特征值收发 |
+| split | VG6328A / I6328A | 一个只写（FFE1），一个只通知（FFE2） |
+
+`fwb info` 会打印实际选中的布局：
+
+```text
+bridge: split layout, write=0000ffe1-..., notify=0000ffe2-..., chunk=120B
+bridge: combined layout, write=0000ffe1-..., notify=0000ffe1-..., chunk=120B
+```
+
+若显示的 `write` / `notify` 与你模块手册不符，或报"找不到可用特征值"，
+把这段输出贴出来——这是排查桥接问题的第一条信息。
+
+## 只在使用 VG6328A 类模块时应答帧头被打坏
+
+**症状**：`fwb info` 偶尔超时；抓到的通知形如
+
+```text
+ff ff ff ff ff ff a9 ab 15 00 10 <payload> 2d da      ← 头 3 字节被改坏
+                   ~~~~~~~~~~~ 应为 aa 55 81
+```
+
+`LEN`、payload、CRC 都是对的，只有开头 1~5 个字节错。
+
+**原因**：这类模块转发完一次下行写入后，其 UART RX 需要约 1 ms 才能重新稳定，
+窗口内到达的字节会被采错。MCU 收到命令后几微秒就应答，正好落在窗口里。
+
+**处理**：
+
+- **固件 v0.1.4 / v0.1.41 起已修复**（应答前留 2 ms 静默），做到 20/20 帧完好。
+  老固件请升级；注意 Bootloader 不能用 OTA 升级，必须 ST-Link/DAPLink 烧一次。
+- 主机侧的解析器也能靠 CRC 从被破坏的帧头恢复（`expect_cmd`），这是通用兜底，
+  但不应当作长期依赖。
+
 ## Windows 上 `fwb ota --ble` 报权限/连接错误
 
 - 关闭可能占用蓝牙的软件（厂商 App、串口助手）。

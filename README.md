@@ -3,7 +3,7 @@
 > 给 STM32F103C8T6（Blue Pill）做**无线固件升级**的命令行工具。
 > 插一次线烧好 Bootloader，之后用 BLE 或串口反复换 App，不再需要下载器。
 
-[![tests](https://img.shields.io/badge/tests-24%20passed-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-41%20passed-brightgreen)](#测试)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 
@@ -15,7 +15,7 @@
 完成对一块 F103 开发板的无线 OTA。
 
 - **`fwb` 命令行工具**：扫描设备、读取版本、通过 BLE / 串口升级固件。
-- **预编译固件**：`release/bootloader-v0.1.3.bin` + `release/app-v0.1.40.bin`；
+- **预编译固件**：`release/bootloader-v0.1.4.bin` + `release/app-v0.1.41.bin`；
   Bootloader 与 App 源码都在 `firmware/`（同一份源码自动识别 64/128 KB）。
 - **自动容量识别**：同一份固件在 64 KB / 128 KB 芯片上分别使用 51 KB / 115 KB App 区。
 - **首次烧录脚本**：`tools/flash_initial.py`（唯一需要插线的一步）。
@@ -113,8 +113,8 @@ python tools\flash_initial.py
 
 ```powershell
 fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb   # 按服务过滤，记下地址
-fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.3, app v0.1.40
-fwb ota release\app-v0.1.40.bin --ble AA:BB:CC:DD:EE:FF
+fwb info --ble AA:BB:CC:DD:EE:FF          # 应返回 bootloader v0.1.4, app v0.1.41
+fwb ota release\app-v0.1.41.bin --ble AA:BB:CC:DD:EE:FF
 ```
 
 输出会显示 `probe → erase → write → verify → jump → done` 全过程。
@@ -130,7 +130,7 @@ fwb scan-ble --timeout 8                       # 扫描附近 BLE
 fwb scan-ble --service 0000ffe0-0000-1000-8000-00805f9b34fb  # 无名字模块按服务过滤
 fwb scan-serial                                # 列出串口
 
-# IO 控制台固件附带命令（app v0.1.40）
+# IO 控制台固件附带命令（app v0.1.41）
 fwb monitor --ble AA:BB:CC:DD:EE:FF            # 实时遥测（--n 秒数，0=一直）
 fwb gpio config PB5 out && fwb gpio write PB5 1
 fwb adc read 4
@@ -155,9 +155,9 @@ stm32f103c8t6-OTA-tool/
 │   ├── bootloader/           #   DFU 源码 / startup / 链接脚本 / Makefile
 │   └── app/                  #   IO 控制台参考固件 / startup / 链接脚本 / Makefile
 ├── release/                  # 预编译固件（可直接烧录）
-│   ├── bootloader-v0.1.3.bin    # → 0x08000000
-│   ├── app-v0.1.40.bin          # → 0x08003000（IO 控制台固件）
-│   └── app-v0.1.40.hex
+│   ├── bootloader-v0.1.4.bin    # → 0x08000000
+│   ├── app-v0.1.41.bin          # → 0x08003000（IO 控制台固件）
+│   └── app-v0.1.41.hex
 ├── tools/
 │   ├── flash_initial.py/.bat/.sh   # 首次烧录（需要 STM32CubeProgrammer）
 │   ├── ble_probe.py                # BLE 诊断：扫描 / MTU / PING / 包长断崖
@@ -193,9 +193,9 @@ Bootloader 启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），自�
 > `BL_QUERY` 在擦除前强制检查；把 100 KB 镜像发到 64 KB 板会被拒绝，
 > 不会擦除现有 App，主机随后发 `BL_ABORT` 让设备自动复位回原 App。
 >
-> **从旧版升级**：只 OTA `app-v0.1.40.bin` 仍可运行，但旧 Bootloader
+> **从旧版升级**：只 OTA `app-v0.1.41.bin` 仍可运行，但旧 Bootloader
 > 仍按 51 KB 上限；要用满 128 KB，需用 ST-Link/DAPLink 再烧一次
-> `release/bootloader-v0.1.3.bin`（地址 `0x08000000`）。
+> `release/bootloader-v0.1.4.bin`（地址 `0x08000000`）。
 >
 > **v0.1.3 / v0.1.40 修了什么**：App 侧修了 1 KB 栈缓冲、`AA AA` 帧重同步、
 > 遥测把 ADC 失败报成 0 mV、参数保存静默失败、心跳值截断，并把 config 页
@@ -203,6 +203,16 @@ Bootloader 启动时读取芯片的 `F_SIZE` 寄存器（`0x1FFFF7E0`），自�
 > `BL_ABORT` 与 `bl_app_valid()`：升级中途取消后留在 DFU（App 区已擦除，
 > 再 OTA 一次即可），不会再跳进半截镜像。详见
 > [firmware/README.md](firmware/README.md#版本变更)。
+>
+> **v0.1.4 / v0.1.41 修了什么**：支持 VG6328A / I6328A 这类 **write 与 notify
+> 分离**的透传模块（此前只认单特征值双向的 JDY 系，遇到分离布局直接选不出
+> 特征值，连不上）；固件在每次应答前留 2 ms 静默，避开这类模块转发完下行后
+> 约 1 ms 的 UART RX 恢复窗口（否则应答的头几个字节会被采错）；主机解析器
+> 可以靠 CRC 从被破坏的帧头中恢复；OTA 不再重放 `BL_DATA`（它不幂等，重放
+> 已接受的块会返回 `PROTO_ERR_PARAM` 并中断一次本可成功的升级）。
+>
+> ⚠️ **Bootloader 不能 OTA 升级**：还在 v0.1.3 Bootloader 上的板子必须用
+> ST-Link/DAPLink 烧一次 `release/bootloader-v0.1.4.bin`（`0x08000000`）。
 >
 > ⚠️ **v0.1.2 不要使用**：它让 `BL_ABORT` 无条件清标志，升级中途取消后会
 > 跳进被擦除的镜像并 HardFault，只能 SWD 救。
@@ -242,12 +252,20 @@ make -C firmware/app FLASH_SIZE_FORCE_KB=64
 
 ```powershell
 pip install -e ".[dev]"
-python -m pytest fwb_tool/tests/ -q      # 应 24 passed
+python -m pytest fwb_tool/tests/ -q      # 应 41 passed
 ```
 
 测试覆盖 CRC 标准向量、帧收发与解析容错、命令码冻结校验、镜像加载与
 Intel HEX 解析，以及 `monitor --n`（监听 N 秒）退出、连接失败信息、无名字设备显示等
-CLI 回归。它们守护的是**主机与固件之间的协议契约**。
+CLI 回归。
+
+另外还有两组针对真实硬件问题的回归用例：
+
+- `test_bridge_pair.py`：combined / split 两种透传布局的特征值选择；
+- `test_parser_recovers_*`：帧头被模块采错时，靠 CRC 反推丢失的 `CMD`——
+  用的是真机抓到的字节串（`aa 55 81` → `a9 ab 15`）。
+
+它们守护的是**主机与固件之间的协议契约**。
 
 ## 为什么断电不变砖
 

@@ -102,7 +102,7 @@ pull: 0=none  1=up     2=down      (仅输入有效)
 ## 版本
 
 以固件 `firmware/common/protocol.h` 的 `BL_VERSION_*` / `APP_VERSION_*`
-为单一真相源。当前：bootloader `0.1.3`，app `0.1.40`。
+为单一真相源。当前：bootloader `0.1.4`，app `0.1.41`。
 
 ## 与自定义固件对接
 
