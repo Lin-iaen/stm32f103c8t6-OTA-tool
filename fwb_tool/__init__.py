@@ -12,7 +12,7 @@ Usage:
 Derived from kurui365/smart-robot-car (MIT). See ATTRIBUTION.md.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.3"
 
 from .device import Device, DeviceError, Telemetry, load_image  # noqa: F401
 from .ota import ota_update  # noqa: F401
