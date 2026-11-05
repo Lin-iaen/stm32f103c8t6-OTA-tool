@@ -106,12 +106,59 @@ def ota_update(dev: Device, image: bytes, progress=None, verify_retries: int = 2
     dev.request_ok(BL_START, pack_u32(total), timeout=10.0)
 
     # ---------- 4) BL_DATA ----------
+    #
+    # BL_DATA is NOT idempotent. The bootloader accepts a chunk only when its
+    # offset equals the number of bytes already received, so replaying a chunk
+    # it did accept comes back as PROTO_ERR_PARAM and aborts an update that was
+    # going perfectly. That is exactly what a *lost response* produces (the BLE
+    # notification drops, or the app->bootloader reset eats the ACK) because
+    # Device.request() retries by default. The default is therefore disabled
+    # here, and one PARAM from a chunk we have not advanced past is treated as
+    # "the device already took this one" - verified by the CRC in phase 5, so a
+    # wrong guess cannot produce a silently corrupt image.
     off = 0
     while off < total:
         chunk = image[off:off + CHUNK]
         payload = pack_u32(off) + chunk
-        dev.request_ok(BL_DATA, payload, timeout=5.0)
+        applied = False
+        last_error = None
+        for attempt in range(3):
+            try:
+                dev.request_ok(BL_DATA, payload, timeout=5.0, retries=0)
+                applied = True
+                break
+            except DeviceError as e:
+                last_error = e
+                if "PARAM" in str(e):
+                    # The device has already accepted this offset: either our
+                    # previous attempt arrived and only its ACK was lost, or a
+                    # late duplicate landed. Advance; BL_VERIFY is the judge.
+                    applied = True
+                    break
+                if "timeout" not in str(e):
+                    raise
+                # Silence is the only reliable resynchronisation: the
+                # bootloader's receive_frame() waits 1000 ms for the header and
+                # 2000 ms per remaining byte, so after 2.5 s of quiet it
+                # abandons the partial frame and the next one starts on a clean
+                # boundary. Without this a single dropped byte makes it read our
+                # following frames as the payload of the broken one, and every
+                # retry is swallowed - which looks like a dead device.
+                time.sleep(2.5)
+                # Re-sending the same offset is safe: if the device already
+                # took this chunk it answers PARAM (handled above).
+            except TransportError as e:
+                last_error = e
+                time.sleep(0.2 * (attempt + 1))
+        if not applied:
+            raise DeviceError(
+                f"BL_DATA at offset {off} failed after retries: {last_error}")
         off += len(chunk)
+        # Pace the transfer: the bridge is a transparent UART with a small
+        # buffer and BL_DATA makes the bootloader block on a flash write, so a
+        # back-to-back stream overruns it and the ACK (or the frame itself)
+        # is dropped. 2 ms per 512 B costs <0.2 s over the whole image.
+        time.sleep(0.002)
         emit("write", 3 + int(87 * off / total),
              f"{off}/{total} bytes")
 
