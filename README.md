@@ -3,7 +3,7 @@
 > 给 STM32F103C8T6（Blue Pill）做**无线固件升级**的命令行工具。
 > 插一次线烧好 Bootloader，之后用 BLE 或串口反复换 App，不再需要下载器。
 
-[![tests](https://img.shields.io/badge/tests-41%20passed-brightgreen)](#测试)
+[![tests](https://img.shields.io/badge/tests-47%20passed-brightgreen)](#测试)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 
@@ -161,6 +161,10 @@ stm32f103c8t6-OTA-tool/
 ├── tools/
 │   ├── flash_initial.py/.bat/.sh   # 首次烧录（需要 STM32CubeProgrammer）
 │   ├── ble_probe.py                # BLE 诊断：扫描 / MTU / PING / 包长断崖
+│   ├── bridge_selftest.py          # 桥接自检：GATT 配对 / 双向透传 / AT 模式
+│   ├── burst_probe.py              # 上行突发逐帧分析（找头部损坏成因用）
+│   ├── capture_ble_text.py         # 抓 BLE 文本流量
+│   ├── live_plot.py                # 遥测实时绘图（需要 matplotlib）
 │   └── build_exe.py                # PyInstaller 打包
 ├── docs/
 │   ├── 01-getting-started.md
@@ -252,7 +256,7 @@ make -C firmware/app FLASH_SIZE_FORCE_KB=64
 
 ```powershell
 pip install -e ".[dev]"
-python -m pytest fwb_tool/tests/ -q      # 应 41 passed
+python -m pytest fwb_tool/tests/ -q      # 应 47 passed
 ```
 
 测试覆盖 CRC 标准向量、帧收发与解析容错、命令码冻结校验、镜像加载与
