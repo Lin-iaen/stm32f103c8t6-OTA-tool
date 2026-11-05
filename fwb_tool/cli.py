@@ -74,6 +74,13 @@ def cmd_scan_ble(args):
 def cmd_info(args):
     with _open_device(args) as dev:
         dev.ping()
+        link = dev.describe_link()
+        if link:
+            # Printed before the version line so a "connected but the transfer
+            # stalls" report already shows which GATT characteristics were
+            # chosen - that is the difference between a combined bridge
+            # (JDY-69) and a split one (VG6328A).
+            print(link)
         bl, app = dev.get_version()
         print(f"connected. bootloader v{'.'.join(map(str, bl))}, app v{'.'.join(map(str, app))}")
 

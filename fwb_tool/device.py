@@ -75,6 +75,11 @@ class Device:
     def close(self) -> None:
         self.transport.close()
 
+    def describe_link(self) -> str | None:
+        """How the BLE pipe was paired, or None for a plain serial link."""
+        describe = getattr(self.transport, "describe", None)
+        return describe() if describe is not None else None
+
     def __enter__(self):
         return self
 
@@ -106,6 +111,10 @@ class Device:
                 except queue.Empty:
                     break
             frame_tx = build_frame(cmd, payload)
+            # Tell the parser which response we are after: a transparent BLE
+            # bridge can corrupt the first bytes of a burst, including CMD, and
+            # the parser needs the expected value to rebuild it from the CRC.
+            self.parser.expect_cmd = expect
             with self._tx_lock:
                 self.transport.write(frame_tx)
             deadline = time.monotonic() + timeout

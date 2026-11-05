@@ -269,3 +269,50 @@ def test_connect_error_keeps_exception_type_when_str_is_empty():
     assert "AA:BB:CC:DD:EE:FF" in msg
     assert "EmptyError" in msg
     assert msg.rstrip().endswith("EmptyError()")
+
+
+# UART burst coming from the MCU with garbage while its TX settles. Observed
+# on hardware, the SOF pair AND the CMD byte can be destroyed while LEN,
+# payload and CRC arrive intact. These byte strings are real captures.
+_BL_QUERY_RESP_CLEAN = bytes.fromhex(
+    "aa5581" "0010" "00000103080030000001cc0000000400" "2dda")
+
+def test_parser_does_not_invent_frames_from_noise():
+    # Without a matching expect_cmd, garbage must never yield a frame.
+    p = P.FrameParser()
+    p.expect_cmd = 0x81
+    assert list(p.feed(b"\xff" * 64)) == []
+    assert list(p.feed(bytes(range(64)))) == []
+
+def test_parser_recovers_when_only_sof_is_mangled():
+    bad = bytes.fromhex("a9") + _BL_QUERY_RESP_CLEAN[1:]   # AA -> A9
+    p = P.FrameParser()
+    p.expect_cmd = 0x81
+    frames = list(p.feed(bad))
+    assert len(frames) == 1
+    assert frames[0].cmd == 0x81
+    assert frames[0].payload == _BL_QUERY_RESP_CLEAN[5:21]
+
+def test_parser_recovers_when_sof_and_cmd_are_mangled():
+    # Real capture: leading "aa 55 81" arrived as "a9 ab 15".
+    bad = bytes.fromhex("a9ab15") + _BL_QUERY_RESP_CLEAN[3:]
+    p = P.FrameParser()
+    p.expect_cmd = 0x81
+    frames = list(p.feed(bad))
+    assert len(frames) == 1, "expect_cmd must let the CRC rebuild a lost CMD"
+    assert frames[0].cmd == 0x81
+    assert frames[0].payload[0] == 0x00
+
+def test_parser_recovery_survives_the_leading_ff_run():
+    # The bridge also prefixes 6 x 0xFF; recovery must skip them.
+    cap = bytes.fromhex("ffffffffffff") + bytes.fromhex("a9ab15") + _BL_QUERY_RESP_CLEAN[3:]
+    p = P.FrameParser()
+    p.expect_cmd = 0x81
+    assert [f.cmd for f in p.feed(cap)] == [0x81]
+
+def test_parser_still_needs_complete_payload():
+    p = P.FrameParser()
+    p.expect_cmd = 0x81
+    assert list(p.feed(_BL_QUERY_RESP_CLEAN[:12])) == []
+    frames = list(p.feed(_BL_QUERY_RESP_CLEAN[12:]))
+    assert len(frames) == 1 and frames[0].cmd == 0x81

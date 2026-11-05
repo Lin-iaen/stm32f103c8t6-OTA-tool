@@ -122,23 +122,148 @@ class SerialTransport:
         self.close()
 
 
+# ---------------------------------------------------------------------------
+# Transparent-bridge GATT pairing
+# ---------------------------------------------------------------------------
+#
+# A "transparent bridge" exposes one serial pipe over BLE, but the vendors do
+# not agree on how to model it in GATT. Two layouts are in the wild:
+#
+#   combined  one characteristic carries both directions
+#             (JDY-69: FFE1 AND FFE2 each support write+notify)
+#             -> write and notify must be THE SAME characteristic
+#
+#   split     one characteristic for downlink, another for uplink
+#             (VG6328A/I6328A: FFE1 = Write Without Response, FFE2 = Notify)
+#             -> write and notify MUST be DIFFERENT characteristics
+#
+# Picking "the first characteristic that has write and notify" silently fails
+# on the split layout (no candidate matches), and naively taking the first of
+# each list can cross-pair the wrong pair on a module that exposes several
+# services (the JDY-69 has ffe0/ffe1/ffe2 and ff10/ff11/ff12). So the rule is
+# explicit and ordered:
+#
+#   1. same characteristic, both directions  -> combined layout
+#   2. write + notify in the SAME service    -> split layout
+#   3. write + notify from different services -> last resort
+#
+# Priority inside each candidate set goes by the well-known suffix list below,
+# so a module that also exposes configuration channels still resolves to the
+# data channel.
+BRIDGE_WRITE_UUIDS = (
+    "0000ffe1-0000-1000-8000-00805f9b34fb",
+    "0000fff1-0000-1000-8000-00805f9b34fb",
+    "0000ffb1-0000-1000-8000-00805f9b34fb",
+    "00002af1-0000-1000-8000-00805f9b34fb",
+)
+BRIDGE_NOTIFY_UUIDS = (
+    "0000ffe1-0000-1000-8000-00805f9b34fb",
+    "0000ffe2-0000-1000-8000-00805f9b34fb",
+    "0000fff1-0000-1000-8000-00805f9b34fb",
+    "0000fff2-0000-1000-8000-00805f9b34fb",
+    "0000ffb1-0000-1000-8000-00805f9b34fb",
+    "0000ffb2-0000-1000-8000-00805f9b34fb",
+    "00002af1-0000-1000-8000-00805f9b34fb",
+)
+
+
+def _ch_props(ch) -> list[str]:
+    return [str(p).lower() for p in (ch.properties or [])]
+
+
+def _can_write(ch) -> bool:
+    p = _ch_props(ch)
+    return "write" in p or "write-without-response" in p
+
+
+def _can_notify(ch) -> bool:
+    p = _ch_props(ch)
+    return "notify" in p or "indicate" in p
+
+
+def _rank(ch, preferred: tuple[str, ...]) -> int:
+    """Index in the preferred list, or len(preferred) for anything else."""
+    uuid = str(ch.uuid).lower()
+    for i, want in enumerate(preferred):
+        if uuid == want:
+            return i
+    return len(preferred)
+
+
+def _service_of(ch) -> str | None:
+    """Owning service UUID, or None when the backend does not expose it."""
+    for attr in ("service_uuid",):
+        value = getattr(ch, attr, None)
+        if value:
+            return str(value).lower()
+    svc = getattr(ch, "service", None)
+    uuid = getattr(svc, "uuid", None)
+    return str(uuid).lower() if uuid else None
+
+
+def pick_bridge_pair(characteristics):
+    """Choose (write_char, notify_char) for a transparent BLE bridge.
+
+    `characteristics` is a flat iterable of BleakGATTCharacteristic (bleak
+    >= 0.21 exposes services.characteristics as a dict {handle: char}; pass
+    `.values()`). Returns (None, None) when the pipe cannot be formed.
+
+    The returned pair may be the same object (combined layout) - callers
+    should not assume two distinct characteristics.
+    """
+    chars = list(characteristics)
+    writable = [c for c in chars if _can_write(c)]
+    notifiable = [c for c in chars if _can_notify(c)]
+
+    if not writable or not notifiable:
+        return None, None
+
+    writable.sort(key=lambda c: _rank(c, BRIDGE_WRITE_UUIDS))
+    notifiable.sort(key=lambda c: _rank(c, BRIDGE_NOTIFY_UUIDS))
+
+    # 1) combined layout: one characteristic for both directions. Prefer an
+    #    exact UUID mentioned in BOTH lists (FFE1 is such a case), because that
+    #    is what every JDY/HC-08 style module exposes.
+    both = [c for c in chars if _can_write(c) and _can_notify(c)]
+    if both:
+        def both_rank(c):
+            return min(_rank(c, BRIDGE_WRITE_UUIDS), _rank(c, BRIDGE_NOTIFY_UUIDS))
+        both.sort(key=both_rank)
+        best = both[0]
+        return best, best
+
+    # 2) split layout inside one service: take the best-ranked writer and the
+    #    best-ranked notifier that live in the same service.
+    for w in writable:
+        w_svc = _service_of(w)
+        if w_svc is None:
+            continue
+        for n in notifiable:
+            if str(n.uuid).lower() == str(w.uuid).lower():
+                continue
+            if _service_of(n) == w_svc:
+                return w, n
+
+    # 3) last resort: best writer + best notifier anywhere.
+    n = notifiable[0]
+    if str(n.uuid).lower() == str(writable[0].uuid).lower():
+        n = next((c for c in notifiable
+                  if str(c.uuid).lower() != str(writable[0].uuid).lower()), n)
+    return writable[0], n
+
+
 class BleTransport:
     """BLE GATT pipe for transparent-bridge modules (ECB02H / JDY / HC-08...).
 
-    Connects via BlueZ (Linux) or WinRT (Windows) using bleak. Discovers the
-    write and notify characteristics automatically, preferring the common
-    transparent-bridge UUIDs (FFE0/FFE1, FFF0/FFF1, FFB0/FFB1) and falling
-    back to any write/notify pair. Writes are chunked adaptively: the
-    characteristic's max_write_without_response_size, capped at 120 bytes
-    (transparent bridges often drop anything over 128 B), with a 20-byte
-    fallback if the OS still rejects the payload.
+    Connects via BlueZ (Linux) or WinRT (Windows) using bleak. Discovered
+    characteristics are paired by pick_bridge_pair(), which handles both the
+    combined layout (one characteristic for both directions, JDY/HC-08) and
+    the split layout (separate write and notify characteristics, VG6328A).
+    Writes are chunked adaptively: the characteristic's
+    max_write_without_response_size, capped at 120 bytes (transparent bridges
+    often drop anything over 128 B), with a 20-byte fallback if the OS still
+    rejects the payload.
     """
-
-    # Well-known transparent-BLE services first, then generic discovery.
-    PREFERRED = ("0000ffe1-0000-1000-8000-00805f9b34fb",
-                 "0000fff1-0000-1000-8000-00805f9b34fb",
-                 "0000ffb1-0000-1000-8000-00805f9b34fb",
-                 "00002af1-0000-1000-8000-00805f9b34fb")
 
     def __init__(self, address: str, on_rx: Callable[[bytes], None] = lambda d: None,
                  timeout: float = 10.0):
@@ -149,6 +274,7 @@ class BleTransport:
         self._thread: threading.Thread | None = None
         self._client = None
         self._write_char = None
+        self._notify_char = None
         self._chunk_size = BRIDGE_MAX_PACKET
         self._closing = False
 
@@ -199,29 +325,35 @@ class BleTransport:
         # after service discovery. A short settle beat makes them stable.
         await asyncio.sleep(0.5)
 
-        # pick write + notify characteristics
-        def props(c):
-            return [p.lower() for p in c.properties]
-        write_candidates = [c for c in chars if "write" in props(c) or "write-without-response" in props(c)]
-        notify_candidates = [c for c in chars if "notify" in props(c)]
-        if not (write_candidates and notify_candidates):
+        # Pick the serial pipe. The layout differs per vendor (combined vs
+        # split write/notify), so the selection lives in pick_bridge_pair()
+        # and is shared with the tools - three copies of this logic is how a
+        # split-layout module ended up looking "incompatible".
+        w, n = pick_bridge_pair(chars)
+        if w is None or n is None:
             raise TransportError("no write/notify characteristics found")
-
-        w = n = None
-        for pref in self.PREFERRED:
-            w = next((c for c in write_candidates if c.uuid == pref), None)
-            n = next((c for c in notify_candidates if c.uuid == pref), None)
-            if w and n:
-                break
-        else:
-            w, n = write_candidates[0], notify_candidates[0]
         self._write_char = w
+        self._notify_char = n
         try:
             max_write = int(w.max_write_without_response_size)
         except Exception:
             max_write = None
         self._chunk_size = plan_chunk_size(max_write)
         await self._client.start_notify(n.uuid, self._notify)
+
+    def describe(self) -> str:
+        """One line naming the paired characteristics, for bug reports.
+
+        Which characteristic was chosen is the first thing to check when a new
+        bridge "connects but transfers nothing", and neither value is visible
+        from the outside otherwise.
+        """
+        if self._write_char is None or self._notify_char is None:
+            return "bridge: not connected"
+        layout = "combined" if self._write_char is self._notify_char else "split"
+        return (f"bridge: {layout} layout, "
+                f"write={self._write_char.uuid}, notify={self._notify_char.uuid}, "
+                f"chunk={self._chunk_size}B")
 
     def _notify(self, _handle: int, data: bytearray) -> None:
         self.on_rx(bytes(data))
@@ -281,6 +413,7 @@ class BleTransport:
                 pass
         self._client = None
         self._write_char = None
+        self._notify_char = None
         fut = asyncio.run_coroutine_threadsafe(self._connect(), self._loop)
         fut.result(timeout=self.timeout + 10)
 

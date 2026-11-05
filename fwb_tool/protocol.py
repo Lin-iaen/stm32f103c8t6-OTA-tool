@@ -77,8 +77,8 @@ ERR_NAMES = {
 }
 
 # Versions (mirror of firmware/common/protocol.h)
-BL_VERSION  = (0, 1, 3)
-APP_VERSION = (0, 1, 40)
+BL_VERSION  = (0, 1, 4)
+APP_VERSION = (0, 1, 41)
 
 
 def crc16_modbus(data: bytes) -> int:
@@ -122,8 +122,13 @@ class Frame:
 class FrameParser:
     """Incremental frame parser: feed() returns complete frames as they arrive."""
 
+    #: Upper bound on bytes kept while waiting for an incomplete frame.
+    _MAX_PENDING = PROTO_MAX_PAYLOAD + 16
+
     def __init__(self) -> None:
         self._buf = bytearray()
+        #: When set, lets the recoverer reconstruct a corrupted CMD byte.
+        self.expect_cmd: int | None = None
 
     def feed(self, data: bytes):
         self._buf.extend(data)
@@ -136,32 +141,82 @@ class FrameParser:
     def _try_parse(self) -> Frame | None:
         buf = self._buf
         while True:
-            # resync on SOF pair
+            # 1) Normal case: anchor on the SOF pair.
             i = 0
             while i < len(buf) - 1 and not (buf[i] == PROTO_SOF0 and buf[i + 1] == PROTO_SOF1):
                 i += 1
-            if i >= len(buf) - 1:
-                if len(buf) > 1:
-                    del buf[:-1]   # keep the last byte: it may be a lone SOF0
+            if i < len(buf) - 1:
+                if i > 0:
+                    del buf[:i]
+                if len(buf) < 5:
+                    return None
+                plen = (buf[3] << 8) | buf[4]
+                if plen > PROTO_MAX_PAYLOAD:
+                    del buf[:1]  # false sync; skip one byte and retry
+                    continue
+                total = 5 + plen + 2
+                if len(buf) < total:
+                    return None
+                crc_calc = crc16_modbus(bytes(buf[2:5 + plen]))
+                crc_rx = (buf[5 + plen] << 8) | buf[5 + plen + 1]
+                frame_bytes = bytes(buf[:total])
+                del buf[:total]
+                if crc_calc != crc_rx:
+                    continue  # CRC error: drop frame, keep scanning
+                return Frame(cmd=frame_bytes[2], payload=frame_bytes[5:5 + plen])
+
+            # 2) No SOF pair anywhere. A transparent BLE bridge can mangle the
+            #    first bytes of every UART burst (the module's TX has not
+            #    settled after idle), which destroys the SOF pair. The CRC
+            #    covers CMD|LEN|payload only, so the frame is still locatable.
+            recovered, need_more = self._recover_headerless(buf)
+            if recovered is not None:
+                frame, consumed = recovered
+                del buf[:consumed]
+                return frame
+            if need_more and len(buf) <= self._MAX_PENDING:
                 return None
-            if i > 0:
-                del buf[:i]
-            if len(buf) < 5:
-                return None
-            plen = (buf[3] << 8) | buf[4]
+            if len(buf) > 1:
+                del buf[:-1]  # keep the last byte: it may be a lone SOF0
+            return None
+
+    def _recover_headerless(self, buf):
+        """Find a CRC-valid response whose leading bytes were corrupted.
+
+        A transparent BLE bridge can overwrite the first bytes of every UART
+        burst (its TX has not settled when the MCU starts talking). SOF0, SOF1
+        and even CMD can be destroyed while LEN, payload and CRC arrive intact.
+
+        The CRC covers CMD|LEN|payload, so a candidate is verifiable once CMD
+        is known. Two passes:
+          1. trust CMD from the wire (works when only the SOF pair was hit);
+          2. substitute ``self.expect_cmd`` -- the host knows which response it
+             is waiting for, so a mangled CMD can be reconstructed exactly.
+        LEN is never guessed: it comes from the wire.
+
+        Returns ``((Frame, consumed) | None, need_more)``.
+        """
+        n = len(buf)
+        need_more = False
+        for s in range(n):
+            if n - s < 5:
+                need_more = True
+                break
+            plen = (buf[s + 1] << 8) | buf[s + 2]
             if plen > PROTO_MAX_PAYLOAD:
-                del buf[:1]  # false sync; skip one byte and retry
                 continue
-            total = 5 + plen + 2
-            if len(buf) < total:
-                return None
-            crc_calc = crc16_modbus(bytes(buf[2:5 + plen]))
-            crc_rx = (buf[5 + plen] << 8) | buf[5 + plen + 1]
-            frame_bytes = bytes(buf[:total])
-            del buf[:total]
-            if crc_calc != crc_rx:
-                continue  # CRC error: drop frame, keep scanning
-            return Frame(cmd=frame_bytes[2], payload=frame_bytes[5:5 + plen])
+            end = s + 3 + plen + 2
+            if end > n:
+                need_more = True  # plausible header, tail still in flight
+                continue
+            payload = bytes(buf[s + 3:s + 3 + plen])
+            crc_rx = (buf[end - 2] << 8) | buf[end - 1]
+            for cmd in (buf[s], self.expect_cmd):
+                if cmd is None or not (cmd & 0x80):
+                    continue
+                if crc16_modbus(bytes([cmd]) + bytes(buf[s + 1:s + 3]) + payload) == crc_rx:
+                    return (Frame(cmd=cmd, payload=payload), end), need_more
+        return None, need_more
 
 
 def pack_u32(v: int) -> bytes:
