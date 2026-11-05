@@ -83,9 +83,9 @@
  * 0.1.0 (UART moved to USART1, generic console app). Bump patch per change. */
 #define BL_VERSION_MAJOR  0
 #define BL_VERSION_MINOR  1
-#define BL_VERSION_PATCH  3
+#define BL_VERSION_PATCH  4
 #define APP_VERSION_MAJOR 0
 #define APP_VERSION_MINOR  1
-#define APP_VERSION_PATCH  40
+#define APP_VERSION_PATCH  41
 
 #endif /* PROTOCOL_H */

@@ -142,8 +142,17 @@ void USART1_IRQHandler(void) {
 
 /* ================= Frame TX ================= */
 
+/* Quiet time before answering, for bridges that need their UART RX to settle
+ * after forwarding a downlink write (VG6328A / I6328A). Measured on hardware:
+ * 0 ms -> the first bytes of the reply are corrupted; >=1 ms -> clean. The app
+ * answers from its main loop and so mostly missed the window (96% intact);
+ * this makes it deterministic. Same fix as the bootloader; see that file for
+ * the full write-up and the measurements. */
+#define APP_TX_SETTLE_MS 2
+
 static void send_frame(uint8_t cmd, const uint8_t *pl, uint16_t len) {
     static uint8_t buf[PROTO_MAX_PAYLOAD + 7u];   /* static: off the stack */
+    delay_ms(APP_TX_SETTLE_MS);
     uint16_t n = 0;
     buf[n++] = PROTO_SOF0;
     buf[n++] = PROTO_SOF1;

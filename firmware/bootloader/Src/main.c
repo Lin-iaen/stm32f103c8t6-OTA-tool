@@ -224,7 +224,48 @@ void bl_jump_to_app(void) {
 }
 
 /* ---------------- Frame I/O ---------------- */
+
+/* Quiet time before every response.
+ *
+ * Some transparent BLE bridges (VG6328A / I6328A) need their UART RX to
+ * settle after they finish forwarding a downlink write. If the MCU answers
+ * too soon, the first bytes of the reply are mis-sampled on their side.
+ *
+ * Measured on hardware with a purpose-built test firmware (fixed 200-byte
+ * reply, downlink of one byte, delay swept in 1 ms steps):
+ *
+ *     delay 0 ms -> first 3 bytes corrupted, 6/6 trials
+ *     delay 1 ms -> clean, 6/6 trials (and every larger value too)
+ *
+ * The bootloader answers within microseconds of the last received byte, so
+ * it hit the window every time (0/12 replies had an intact header). The app
+ * answers from its main loop and mostly missed it (96%).
+ *
+ * Note: padding the reply with dummy bytes does NOT help -- the window is
+ * time-based and the filler is consumed first, but the frame that follows is
+ * still damaged. Only waiting works.
+ *
+ * Cost: 2 ms per response. An OTA sends ~70 data frames, so ~0.15 s total.
+ */
+#define BL_TX_SETTLE_MS 2
+
+/* Core debug / DWT, not part of the project's register header. */
+#define DEMCR_REG      (*(volatile uint32_t *)0xE000EDFCu)
+#define DWT_CTRL_REG   (*(volatile uint32_t *)0xE0001000u)
+#define DWT_CYCCNT_REG (*(volatile uint32_t *)0xE0001004u)
+
+static void bl_delay_ms(uint32_t ms) {
+    /* DWT cycle counter: exact, and independent of compiler optimisation. */
+    DEMCR_REG |= (1u << 24);             /* TRCENA */
+    DWT_CYCCNT_REG = 0;
+    DWT_CTRL_REG |= 1u;                  /* CYCCNTENA */
+    uint32_t start = DWT_CYCCNT_REG;
+    uint32_t ticks = ms * 72000u;        /* 72 MHz core clock */
+    while ((DWT_CYCCNT_REG - start) < ticks) { }
+}
+
 void bl_send_response(uint8_t cmd, const uint8_t *payload, uint16_t len) {
+    bl_delay_ms(BL_TX_SETTLE_MS);
     bl_usart1_putc(PROTO_SOF0);
     bl_usart1_putc(PROTO_SOF1);
     bl_usart1_putc((uint8_t)(cmd | 0x80));
